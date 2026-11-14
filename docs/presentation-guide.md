@@ -1,528 +1,381 @@
-# Greenwave: the presenter's guide
+# Greenwave: explained simply
 
-What this guide gives you:
+This guide explains Greenwave as if you have never written a line of code. Read it top to bottom once and you will understand:
 
-- the problem Greenwave solves, how it works and why it was built this way
-- how it answers the **Composition** theme and the **Neptune North** challenge
-- exact numbers to quote, a demo script, and answers to likely judge questions
+- what problem we're solving
+- how the traffic lights "think"
+- what every part of the website shows
+- what happens when you break the boss computer or cut the wires
 
-Every figure here comes from the real code and real runs. Nothing is invented. Where something is a limitation, the guide says so and gives you an honest answer for it.
-
----
-
-## 1. The 30-second pitch
-
-> City traffic lights depend on a central computer. When that computer or its network fails, every junction drops to a dumb fixed timer: traffic backs up and ambulances sit at red lights.
->
-> **Greenwave removes the centre.** Each junction is its own small agent. It sees only its own sensors and talks only to the four junctions next to it. They tell each other "a group of cars is coming your way", which creates green waves. They pass an ambulance's request ahead of it hop by hop, clearing a green corridor.
->
-> Cut any link, or all of them, and nothing collapses. Each junction keeps deciding for itself. City-wide flow is **composed** from purely local decisions: an orchestra with no conductor.
->
-> When the central controller fails, Greenwave gets the ambulance across the city in **57 seconds instead of 106**, and halves the average car wait. With every communication link cut, it still does.
+At the end there's a **cheat sheet of grown-up words**, so you can say the same things in the language judges expect.
 
 ---
 
-## 2. The problem
+## Part 1: The story in one minute
 
-### The real-world situation
+Imagine a small town with 16 crossroads, each with a set of traffic lights.
 
-- **Most city signals are centrally coordinated.** A central system collects detector data, decides timings, and sends them out over a network. Examples of this kind of adaptive control are SCOOT in the UK and SCATS in Australia.
-- **The centre is a single point of failure.** If the server or the communications network fails, junctions typically fall back to pre-set fixed-time plans or isolated operation. These timers don't react to actual traffic.
-- **The cost of failure:**
-  - queues build because greens go to empty roads while full roads sit on red
-  - emergency vehicles lose time at red lights, because nobody is clearing a path for them
+**Today, in real cities:** all the traffic lights are controlled by **one boss computer** in an office. The boss sees every road and tells every light when to go green. That works well, until the boss computer breaks or its wires get cut.
 
-### What we set out to prove
+**When the boss breaks:** every traffic light goes back to a dumb **egg timer**: 30 seconds green one way, 30 seconds green the other way, over and over. It doesn't matter if a road is empty or has a huge queue. Cars pile up. An ambulance gets stuck at red lights.
 
-You *can* get coordination without a coordinator:
+**Greenwave's idea: get rid of the boss.** Give **every traffic light its own little brain**. Each little brain:
 
-1. Junctions that see only local information can still beat fixed timers by a wide margin.
-2. Talking to neighbours adds measurable coordination (green waves).
-3. When communications fail, the system **degrades gracefully** instead of collapsing.
-4. Safety (never two conflicting greens) is guaranteed locally, with no one checking from above.
+- **looks at its own roads** ("how many cars are waiting at me?")
+- **chats only with the four traffic lights right next to it** ("hey, I just sent 5 cars your way!")
+- **decides for itself** when to turn green
 
----
+Nobody is in charge. Nothing can "break the boss", because there is no boss. Cut the wires between lights, and each light just carries on using its own eyes.
 
-## 3. The theme: Composition
-
-Use these three angles. The first is the headline; the other two show depth.
-
-1. **Behaviour is composed (the headline).**
-   - No component knows what a "green wave" or an "ambulance corridor" is.
-   - Each junction runs one small rule set: serve the busier direction, listen to forecasts from neighbours, give way to an ambulance.
-   - Green waves and corridors **emerge** from 16 copies of that rule set, each talking only to its neighbours.
-   - That's the orchestra with no conductor: each musician listens to the people next to them, and the music still holds together.
-
-2. **The system is composed of interchangeable parts.**
-   - The program is three layers that snap together:
-     1. a pure **junction brain**
-     2. a **world** (roads, cars, links)
-     3. a **display**
-   - The *same* brain runs in three places:
-     - inside a Web Worker (live demo)
-     - inside a deterministic test harness
-     - later, on a microcontroller in the physical model
-   - Swap the controller and the same world runs Central, Fixed or Greenwave.
-
-3. **Decisions are composed over time.** Each junction composes its decision from:
-   - what its sensors see now (queues)
-   - what its neighbours say is coming (forecasts)
-   - what is urgent (ambulance priority)
-
-   These are layered by a simple scoring rule, with a safety layer underneath that can never be overridden.
+**The result:** with the boss broken, an ambulance crosses the town in **57 seconds with Greenwave**, compared with **106 seconds on egg timers**. And it still takes 57 seconds even when **every single wire is cut**.
 
 ---
 
-## 4. The sponsor challenge: Neptune North
+## Part 2: The town
 
-> *Design systems that work together in a distributed way, even when communications are interrupted, with no central hub giving instructions.*
+- **16 crossroads** in a 4 × 4 square, like a noughts-and-crosses board with an extra row and column.
+- **Roads** run between them. Each road has one lane each way.
+- **Cars** drive in from the edges, follow a route (mostly straight, sometimes turning), and drive out the other side.
+- **One ambulance** can be sent across the town. It follows the same rules as cars: it stops at red lights and can't overtake. So how fast it gets across shows how well the lights helped it.
+- **Wires (links)** connect each traffic light to its neighbours, so they can send each other messages. There are 24 wires in total.
 
-| Requirement | How Greenwave meets it | Evidence you can show |
-|---|---|---|
-| **Work together** | Junctions share PLATOON forecasts that create green waves, and pass PRIORITY requests that clear ambulance corridors. | Turn messages off (`M`): stops per car rises about 25%. Turn on "Show messages" (`O`): pulses travel between junctions. |
-| **Distributed** | 16 independent agents, **one Web Worker (separate thread) per junction**. Each runs its own decision loop on its own timer. | DevTools shows 16 worker threads named `junction-0` … `junction-15`. |
-| **No central hub** | No code anywhere decides lights for Greenwave junctions. The world only carries messages and sensor readings; it never chooses a light. | The code: `src/brain/junction.js` is the only thing that picks a Greenwave light. |
-| **Works when comms are interrupted** | Lost messages simply never arrive. The junction's decision rule loses its forecast term and becomes purely local; there is no mode switch to fail. The ambulance falls back to the siren detector. | Cut all links (`C`) mid-run: Greenwave keeps running, and its ambulance still arrives without stopping. |
-| **Judges will probe independence** | An automated test **fails the build** if the brain imports anything outside its own folder, or uses randomness, clocks, timers or browser globals. | `test/brain-isolation.test.js`, and the brain's interface (§6.2). |
-
-**The line to use:** *"There is literally no code path from one junction's decision to another's except a message over a link. If the link is cut, the message is gone. That's the test the judges care about, and we enforce it automatically."*
+Everything is a **pretend town on a computer**, a simulation. But it follows real-world rules: cars keep a safe gap, stop at red, and take a moment to cross the crossroads.
 
 ---
 
-## 5. Architecture: three layers
+## Part 3: Each traffic light's little brain
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│ DISPLAY  (src/display)       draws snapshots, sends commands │
-│   main.js · map-renderer.js · scoreboard.js · toasts.js      │
-└──────────────▲───────────────────────────────┬───────────────┘
-        snapshot() (read-only)       commands (cut link, fail central…)
-┌──────────────┴───────────────────────────────▼───────────────┐
-│ WORLD  (src/world)        physics, sensors, links, metrics   │
-│   roads · cars · seeded traffic · the "wire" between junctions│
-└──────────────▲───────────────────────────────┬───────────────┘
-      lights + outgoing messages         sensor readings + inbox
-┌──────────────┴───────────────────────────────▼───────────────┐
-│ JUNCTION BRAIN  (src/brain)      pure decision logic, ×16     │
-│   step(state, inputs) → { state, lights, outbox }            │
-└──────────────────────────────────────────────────────────────┘
-```
+### What a light can see
 
-**Why three layers?**
+Each light can only use **its own senses**. It's like a person standing at the crossroads with their eyes and ears:
 
-- **Portability.** The brain must later run on microcontrollers in a physical model, so it can't depend on a browser. It's pure logic: data in, data out.
-- **Testability.** The world runs headless, without a screen, and is seeded. So the same traffic replays identically, and tests can run thousands of simulated seconds in about a second.
-- **Honesty of the demo.** The display only *draws* what the world reports. What you see is what the simulation did, not an animation.
-
-### Who decides what
-
-| Component | Decides | Never does |
-|---|---|---|
-| Junction brain | Its own light (`NS`, `EW` or `ALL_RED`) and the messages it sends | Read another junction's state, or anything global |
-| World | Where cars are, what sensors read, whether a message gets through a link | Choose any light |
-| Controller (Central / Fixed / Greenwave host) | Runs its decision-maker and applies the lights | Greenwave's host doesn't decide; it only relays |
-| Display | What to draw | Change the simulation, except through commands |
-
----
-
-## 6. The junction brain (`src/brain/`)
-
-This is the heart of the project. Know this section well.
-
-### 6.1 Signals and phases
-
-- Each junction has **two phases**:
-  - `NS`: north–south traffic gets green
-  - `EW`: east–west traffic gets green
-- Between them is **`ALL_RED`**: every approach red.
-- Turning cars go on their own approach's green, and roads are single lane each way.
-
-**Why two phases?** It's the simplest model that still has real conflicts to manage, and it keeps the brain small enough to port to a microcontroller. Protected turn phases add complexity without changing the story.
-
-### 6.2 The interface: what makes it independent
-
-```
-step(state, inputs) → { state, lights, outbox }
-
-inputs  = { now, queues:{N,E,S,W}, departures:{N,E,S,W}, inbox:[messages], sirenNear }
-outputs = { lights: 'NS' | 'EW' | 'ALL_RED', outbox: [{ to: 'N'|'E'|'S'|'W', msg }] }
-```
-
-**Inputs:**
-- `queues`: how many cars are stopped within 60m of each stop line (its own sensors).
-- `departures`: how many cars just left through each exit (its own loop detectors).
-- `inbox`: messages that arrived from neighbours.
-- `sirenNear`: which approach an ambulance siren is heard on (within 80m), if any.
-
-**Outputs:**
-- `lights`: exactly **one value**, so two conflicting greens literally cannot be expressed.
-- `outbox`: messages addressed only by **direction** (north, east, south, west).
-
-**Things to point out to judges:**
-
-- The brain does not know its own ID, its grid position, how big the city is, or who its neighbours are. It only knows "the junction to my north".
-- It is a **pure function**: the same state and inputs always give the same result. It uses no clock, no randomness and no global variables, and the isolation test enforces that.
-- The state is tiny:
-  - the current signal
-  - a list of forecasts
-  - the current ambulance priority
-  - recently seen message IDs
-
-  It fits easily on a microcontroller.
-
-### 6.3 The safety state machine (`phases.js`)
-
-These rules are applied *before* anything else and cannot be bypassed:
-
-| Rule | Value | Why |
-|---|---|---|
-| Green only ever changes to `ALL_RED` | — | A direct green→green switch is impossible |
-| `ALL_RED` lasts at least | **2 s** | A car takes 1.5 s to cross the junction, so the box is empty before the other direction goes |
-| Minimum green | **6 s** | Stops rapid flickering that would waste time and confuse drivers |
-| Maximum green | **45 s** (if anyone is waiting the other way) | Nobody is starved forever |
-
-**Safety is guaranteed in two independent ways:**
-
-1. **By construction:** the brain can only output one phase, and the state machine forces all-red between greens.
-2. **By physical observation:** the world separately counts a **conflict** whenever it sees:
-   - a direct green-to-green change, or
-   - cars from both directions inside the same junction box at once
-
-   That counter is on screen, and it has been **0 in every test, every mode, every cut pattern and every live run**.
-
-### 6.4 How a junction decides (every 0.25 s)
-
-**Step 1: Is an ambulance coming?** If a priority request is active, give green to the ambulance's approach immediately. The minimum green is skipped, but never the all-red. Details are in §7.2.
-
-**Step 2: Otherwise, max-pressure scoring.**
-
-```
-score(phase) = cars queued on that phase's approaches
-             + Σ forecast cars × weight(how soon they arrive)
-```
-
-- **The forecast weight:**
-  - 1 if the cars arrive within 5s
-  - fading to 0 at 15s
-  - far-off forecasts count less
-- **The switching rule:**
-  - switch when the other phase's score beats the current one by **more than 2**, and minimum green has passed
-  - also switch at 45s if anyone at all is waiting the other way
-
-**Step 3: Tell the neighbours.** For every car that just left towards a neighbour, send that neighbour a PLATOON forecast: "*n* cars reaching your west approach in about 10s". That's 120m between junctions at 12 m/s.
-
-**Why "max-pressure"?** It's a well-known decentralised signal-control idea: serve whichever direction has more demand. It needs only local information, it's simple to reason about, and it's easy to port. The margin of 2 adds **hysteresis**, so the junction doesn't flip-flop when demand is nearly equal.
-
-### 6.5 Approaches we rejected (and why)
-
-| Alternative | Why not |
+| Sense | What it notices |
 |---|---|
-| **Fixed cycles with negotiated offsets** (the textbook green wave) | Junctions agree time offsets so greens line up along a corridor. It adapts slowly to real traffic. When links are cut, the offsets drift and need re-negotiation logic, and that is exactly where it would fail. |
-| **Machine learning / reinforcement learning** | Couldn't be trained and validated in a hackathon. Judges can't inspect *why* it decided something, and safety would be much harder to argue. |
-| **A central optimiser with backups** | That's still a centre. Moving the single point of failure isn't removing it. |
+| 👀 **Queue counter** | "How many cars are waiting at my red light on each road?" |
+| 👋 **Leaving counter** | "How many cars just drove away from me, and which way did they go?" |
+| 👂 **Siren ears** | "Can I hear an ambulance siren close by (within 80 metres)? Which road is it on?" |
+| ✉️ **Messages from neighbours** | Notes passed along the wires from the four lights next to it |
 
-Max-pressure plus forecasts degrades **gracefully**. When a link is cut, the forecast term just becomes zero and the junction is a pure local controller. No failure mode needs detecting, so there's nothing to get wrong.
+That's all. A light **doesn't know** where it is in the town, how big the town is, or what lights far away are doing. It's like a kid in a classroom who can only whisper to the kids sitting next to them.
+
+### How it decides: count and compare
+
+The two directions take turns:
+- **north–south** gets green, or
+- **east–west** gets green.
+
+Every quarter of a second, the light asks itself:
+
+> "Which direction has **more cars waiting**, plus **cars my neighbours told me are about to arrive**?"
+
+- If the other direction is **clearly busier** (more than 2 cars' worth), it switches.
+- If it's nearly even, it **stays as it is**. Otherwise it would flip back and forth like a confused referee.
+- It never lets anyone wait forever. After 45 seconds of green, if anyone at all is waiting the other way, it switches.
+
+### Passing notes: how green waves happen
+
+When a light lets cars go, it whispers to the next light down the road:
+
+> ✉️ "**5 cars are heading your way. They'll reach you in about 10 seconds.**"
+
+The next light adds those cars to its count. So it can **turn green just before they arrive**, and the group of cars sails through without stopping. Then that light whispers to *its* neighbour, and so on.
+
+Nobody planned it, but you get a **green wave**: a run of lights turning green one after another as a group of cars drives along. It's like a Mexican wave in a football stadium. No one is in charge; each person just reacts to the person next to them.
+
+### The ambulance: passing the message ahead
+
+1. As the ambulance approaches the first light, it **radios that light**: "I'm coming, and here's my route."
+2. That light **passes the message along the wire** to the next light on the route: "Ambulance coming, about 10 seconds behind me."
+3. That light passes it on again, up to 3 lights ahead.
+4. Each light **turns green for the ambulance just before it arrives**.
+5. When the ambulance has gone past, the light **sends a fresh message ahead**, so the green path keeps rolling in front of the ambulance.
+
+It's like a relay race, where each runner hands the baton forward before the ambulance gets there.
+
+**If a wire is cut,** the message can't get through. But the light past the cut still has its **siren ears**: when the ambulance gets within 80 metres (about 7 seconds away), it hears the siren and turns green anyway. That's the backup plan.
+
+### The golden safety rule
+
+> **A light must never show green both ways at once.** That would cause crashes.
+
+Greenwave makes that impossible in two ways:
+
+1. **A light can only hold one choice at a time:** north–south green, east–west green, or all red. There's simply no way to say "both green".
+2. **Every time it changes direction, all lights go red for 2 seconds first.** A car takes 1.5 seconds to cross the crossroads, so the middle is always empty before the other side goes.
+
+The computer also **watches for crashes** separately, and counts them. That number is on the screen ("Conflicting greens"), and it has been **0 in every test and every run**.
 
 ---
 
-## 7. Neighbour messages
+## Part 4: What you see on the website
 
-### 7.1 PLATOON: "cars are coming your way" (green waves)
+Open the website and you'll see this layout:
 
-- **When it's sent:** whenever a junction lets cars through towards a neighbour.
-- **Contents:** `{ approach, count, etaSec }`.
-- **What the receiver does:** adds the cars to its score for that approach, weighted by how soon they arrive. It may go green *just before* the group arrives, so the group doesn't have to stop.
-- **The result:** green waves form without anyone planning them.
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Greenwave  t = 32.1 s  3×        [CENTRAL: ONLINE] [LINKS CUT: 0/24]│  ← top bar
+│                                  [GREENWAVE MESSAGES: ON] [Focus view]│
+├────────────────┬────────────────┬────────────────────────────────┤
+│   Central      │ Fixed (central │   Greenwave                    │
+│   (map)        │  failed) (map) │   (map)                        │  ← three towns
+│                │                │                                │
+│ [numbers]      │ [numbers]      │ [numbers]                      │
+├────────────────┴────────────────┴────────────────────────────────┤
+│ INCIDENTS     NETWORK          GREENWAVE          SIM            │  ← buttons
+└──────────────────────────────────────────────────────────────────┘
+```
 
-**Measured effect** (5 seeds, 600s, default traffic):
+### The three towns
 
-| | Stops per car | Avg wait |
+There are **three copies of the same town, side by side**. They get **exactly the same cars at exactly the same times**, so the comparison is fair. Only the way the traffic lights are run is different:
+
+| Town | How its lights work | What it stands for |
 |---|---|---|
-| Greenwave, messages on | **1.61** | **12.9 s** |
-| Greenwave, all links cut | 2.16 | 15.1 s |
+| **Central** (left) | One boss computer that sees **everything** and controls every light. It's even given superpowers: it knows where every car is instantly, and the ambulance's whole route in advance. | Today's best-case city, **while the boss computer is working**. |
+| **Fixed (central failed)** (middle) | Egg timers: 30 s green one way, 2 s all red, 30 s the other way, forever. | What a city falls back to **when the boss computer breaks**. |
+| **Greenwave** (right) | 16 little brains, each deciding for itself and chatting to its neighbours. | **Our idea.** |
 
-That's about **25% fewer stops** and about 15% less waiting, purely from neighbours talking.
+### What the shapes and colours on the map mean
 
-### 7.2 PRIORITY: the ambulance corridor
-
-**1. The first junction is told directly.**
-- The ambulance radios its **first** junction directly, with a short-range radio request, when it is within 200m.
-- The request carries the ambulance's remaining route as directions, e.g. `[E, E, S, E, E]`.
-
-**2. The request is forwarded hop by hop.** A junction that receives a request:
-- records priority for the ambulance's approach, as an absolute arrival time
-- forwards it to the next junction on the route
-- adds 10s to the arrival estimate and removes one step from the route
-- stops forwarding after **3 hops**, so it doesn't clear the whole city too early
-
-**3. The junction switches.** It acts once the ambulance is **within 15s**. It switches to the ambulance's approach, skipping minimum green but never all-red.
-
-**4. The corridor rolls forward.** When the siren passes, so the ambulance has crossed, the junction:
-- clears its priority
-- sends a fresh request onward with an updated arrival time
-
-**5. Safety nets:**
-- Duplicate messages are ignored, using an ambulance ID plus sequence number.
-- Stale messages are dropped.
-- Priority times out 20s after the expected arrival, so a lost ambulance can't freeze a junction forever.
-
-**When links are cut,** the request stops at the gap. The next junction falls back to its own **siren detector** (80m, about 6.7s of warning). That's enough to go through all-red and turn green before the ambulance arrives.
-
-### 7.3 Why only the *first* junction gets the radio request
-
-- The original spec had the ambulance radio *every* junction directly as it approached.
-- With 120m blocks and a 200m radio range, every junction would always get a direct radio warning.
-- So hop-by-hop forwarding *and* the siren fallback would never matter: dead code that contradicts the design.
-- Radioing only the first junction makes the corridor genuinely distributed.
-
-### 7.4 Being honest about the corridor
-
-- **The finding.** In our model, the corridor doesn't make the ambulance measurably faster than the siren fallback. With all links cut, Greenwave's ambulance still arrives in about 57s with zero stopped time. We measured why: in every mode, the ambulance is never held at a red light. Any time it loses comes from cars ahead of it, never from signals.
-- **How to frame it:** "The corridor is the first line of defence; the siren is the second. Our results show that even when the first line is cut completely, the second keeps the ambulance moving. That's resilience: losing communication costs the ambulance nothing."
-- **Why the siren is enough:** cars in the model accelerate instantly, so a queue clears almost immediately once the light changes. With realistic acceleration, early warning would matter more. See §12.
-
----
-
-## 8. The world (`src/world/`)
-
-### 8.1 The city
-
-- **Grid:** 4×4 junctions, 120m apart, plus 120m entry and exit roads at the edges. The whole world is 600m × 600m.
-- **Cars:** 16 entry points. Each car gets a route at spawn: mostly straight, sometimes left or right, never a U-turn.
-- **Movement:**
-  - cruise at 12 m/s (about 27 mph)
-  - keep a 7m gap
-  - stop at the line on red
-  - once in the junction box, always finish crossing (1.5s)
-- **Blocking:** a car won't enter the junction if its exit road is full, so the junction itself never gets blocked.
-- **The ambulance:** follows the same rules. It obeys signals and can't overtake, so its journey time honestly reflects how well the signals served it.
-
-### 8.2 Identical traffic in every panel (determinism)
-
-- At start-up, a seeded random generator (`mulberry32`) builds the **entire spawn schedule up front**: every car, when it appears, and its route.
-- All three panels read the same schedule, so they face **exactly the same demand**.
-- Nothing that happens in the simulation can change the schedule. A red light in one panel can't change which cars appear.
-- Tests check that the same seed gives the **same result**, snapshot-for-snapshot, in every mode.
-
-### 8.3 Links: the wire between junctions
-
-- There are 24 links, one between each pair of adjacent junctions.
-- A message over an up link arrives after a short delay (0.05s). Over a cut link it's silently dropped.
-- Messages already in flight when a link is cut are dropped too.
-- Restoring a link doesn't replay lost messages, just like a real network.
-- **Greenwave messages off** (`M`) drops every neighbour message for the Greenwave panel only, without touching which links are up. A test proves it behaves exactly like cutting every link.
-
-### 8.4 Sensors: all local
-
-| Sensor | Reads |
+| You see | It means |
 |---|---|
-| Queue detector | Cars stopped within 60 m of the stop line, per approach |
-| Departure counter | Cars leaving through each exit since the last reading |
-| Siren detector | Whether the ambulance is within 80 m on an approach |
+| Dark grey bands | Roads |
+| Small dark squares | Crossroads (where the traffic lights are) |
+| **Long glowing green bar** at a crossroads | Green light for the road on that side |
+| **Short red bar** | Red light for the road on that side |
+| **Pale dot** | A moving car |
+| **Amber/orange dot** | A **stopped** car, waiting in a queue. More amber = more waiting. |
+| **White dot with a flashing red/blue glow** | The ambulance |
+| **Faint dashed circle around the ambulance** | How far its siren can be heard (80 metres) |
+| **Thin blue line** between crossroads | A working wire (link) |
+| **Red dashed line with a red ✕** | A **cut** wire |
+| **Grey dotted line** | Greenwave's messages are switched **off** |
+| **Little blue dots sliding along wires** | "Cars coming your way" messages (only when **Show messages** is on) |
+| **Little red dots with a tail** | "Ambulance coming" messages |
+| **Orange box labelled TIMER** | In the Central town: this light has lost contact with the boss, so it's using the egg timer |
 
----
+### The numbers under each town
 
-## 9. The three modes (baselines)
-
-| Panel | What it does | Why it's there |
+| Box | What it means | Lower is better? |
 |---|---|---|
-| **Central** | One optimiser with **perfect, instant knowledge** of every car and the ambulance's full route. It pre-clears every junction ahead of the ambulance. It reaches junctions over the same link mesh from a hub at the top-left junction. | The honest strong baseline: what today's best-case central system looks like *while it works*. |
-| **Fixed (central failed)** | A 30s NS / 2s all-red / 30s EW / 2s all-red cycle, all junctions in sync. | What cities fall back to when the centre fails. |
-| **Greenwave** | 16 independent agents, one Web Worker each, talking only to neighbours. | Our system. |
+| **Ambulance** | How long the ambulance has taken so far (it shows "…" while still driving). Underneath: how many seconds it spent **stopped**. | Yes |
+| **Stops / car** | On average, how many times each car had to stop on its trip, over the last minute. Underneath: the overall average. | Yes |
+| **Avg wait** | On average, how many seconds each car spent stopped, over the last minute. | Yes |
+| **Conflicts** | How many times two directions had green at once. **Always 0.** | Must be 0 |
 
-**How Central fails:**
-- **Fail central** (`F`) takes the controller down, and every Central junction drops to fixed timers. You'll see the amber **TIMER** outlines appear.
-- Cutting links can also orphan Central junctions. A junction with no path back to the hub drops to its timer.
-- A mesh is redundant, so single cuts barely hurt Central, but cut enough links and whole regions go dark.
+The **best number in each row glows green**. A "—" means no data yet: no car has finished a trip, or the ambulance hasn't been sent.
 
-**Why make Central honest (even better than us when working)?** Judges respect a fair comparison. Our claim isn't "we beat a working central system". It's: **"we come close to a working central system, and we don't fall over when it would."**
+### The top bar
+
+- **t = 32.1 s**: how long the pretend town has been running.
+- **3×**: the speed. 3× means the town runs three times faster than real life.
+- **CENTRAL: ONLINE / FAILED**: is the boss computer working?
+- **LINKS CUT: 0/24**: how many of the 24 wires are cut.
+- **GREENWAVE MESSAGES: ON / OFF**: are Greenwave's lights allowed to chat?
+- **Focus view / Grid view**: switches the layout (see below).
+
+### The buttons (and their keyboard keys)
+
+| Button | Key | What it does |
+|---|---|---|
+| **Fail central** | `F` | Breaks the boss computer |
+| **Spawn ambulance** | `A` | Sends an ambulance across all three towns at once. Only one ambulance at a time. |
+| **Cut all links** | `C` | Cuts every wire in all three towns |
+| **Restore all** | `R` | Fixes every wire |
+| *Click a wire on any map* | — | Cuts that one wire (in all three towns). Click again to fix it. |
+| **Messages: ON/OFF** | `M` | Stops Greenwave's lights chatting (Greenwave town only) |
+| **Show messages** | `O` | Draws the messages as little moving dots |
+| **Slower / Faster** | `[` `]` | Changes speed: 1×, 3× or 5× |
+| **Reset** | `Shift+R` | Starts everything again |
+
+### Focus view
+
+Press `V` to swap to **focus view**:
+- **one big map**, so people at the back of the room can see it
+- tabs choose which town it shows: `1` Central, `2` Fixed, `3` Greenwave
+- next to it, a **scoreboard** showing all three towns' numbers side by side
+
+Press `V` again to go back to the three small maps.
+
+### Pop-up messages
+
+Little banners pop up in the top-right corner to say what just happened: "Central controller failed", "Link 5–6 cut", "Ambulance arrived: Greenwave 57.3 s · Central 107.4 s · Fixed 108.3 s". They disappear after 3 seconds.
 
 ---
 
-## 10. Results to quote
+## Part 5: What the big buttons actually do
 
-Averages over 5 seeds, ambulance dispatched at t = 120s, 600s simulated, default traffic:
+### 💥 "Fail central": breaking the boss computer
 
-| Mode | Ambulance journey | Avg car wait | Stops per car | Conflicting greens |
-|---|---|---|---|---|
-| Central (working) | 57.3 s | 11.8 s | 1.31 | 0 |
-| Central **failed** → fixed timers | **106.2 s** | **29.5 s** | ≈1.64 (same timers as Fixed) | 0 |
-| Fixed timers | 106.0 s | 29.4 s | 1.64 | 0 |
-| **Greenwave** | **57.1 s** | **12.9 s** | 1.61 | 0 |
-| **Greenwave, all links cut** | **57.1 s** | **15.1 s** | 2.16 | 0 |
+| Town | What happens | What you'll see |
+|---|---|---|
+| **Central** | The boss stops working. Every light drops to the **egg timer**. | Orange **TIMER** boxes appear on every crossroads. Amber queues grow. Waiting time climbs. |
+| **Fixed** | Nothing changes. It was already using egg timers (it *is* "the boss has failed"). | No change. |
+| **Greenwave** | **Nothing changes**, because Greenwave never had a boss. | Carries on exactly as before. |
 
-**What to say:**
+**The point:** in a normal city, one broken computer makes the whole town dumb. In Greenwave there's no single thing to break.
 
-- "When the central system fails, the ambulance takes **106 seconds** on fixed timers. On Greenwave it takes **57**, and it's still 57 **with every link cut**."
-- "Car waiting time roughly **halves**: 29 seconds down to 13."
-- "We get within about a second of a working central system's wait time, with no centre at all."
-- "Neighbour messages cut stops per car by about a quarter (Greenwave on vs off)."
-- "Zero conflicting greens, ever."
+### ✂️ "Cut all links" (or clicking a wire): cutting the wires
 
-**Two things to know about the numbers:**
+| Town | What happens | What you'll see |
+|---|---|---|
+| **Central** | The boss talks to the lights *through* the wires, starting from the top-left crossroads. A light that can't be reached any more loses the boss and drops to the egg timer. Cutting one wire usually doesn't matter, because messages can go the long way round. Cut enough and parts of the town go dumb. Cut all of them and the whole town is on egg timers. | TIMER boxes appear wherever the boss can't reach. |
+| **Fixed** | Nothing. Egg timers don't use wires. | Red ✕ marks, but no difference in behaviour. |
+| **Greenwave** | The lights **can't chat** any more. No "cars coming" notes, no "ambulance coming" notes. But **every light keeps working on its own**: it still counts its own queues and still hears sirens. | Red ✕ marks. The town keeps flowing. The ambulance still gets through, because each light hears its siren. |
 
-- **Stops per car does not beat fixed timers.** Fixed timers hold 30-second greens, so cars stop *less often* but wait much *longer* each time (29s vs 13s). Use stops per car to compare **Greenwave with messages on versus off**. Use **ambulance time and average wait** to compare against fixed timers. On the scoreboard, the stops row often highlights Fixed or Central. That's expected, so don't be caught out by it.
-- **Live demo numbers vary slightly.** The live Greenwave panel runs real asynchronous workers, so its figures vary a little from run to run. One live run gave 57.4s against 77.0s. The table above comes from the deterministic test host.
+**The point:** Greenwave doesn't need the wires to stay working. The wires make it **better**, not **possible**. Losing them makes it a bit worse, not broken.
+
+### 🔇 "Messages OFF": stopping Greenwave's chatting
+
+This does the same as cutting every wire, but **only in the Greenwave town**. The other two towns are left alone, and any wires you cut by hand stay cut.
+
+It's the cleanest way to show **what the chatting is worth**. Watch Greenwave's **Stops / car** number over the next minute: it goes **up**, because without "cars coming" notes, the green waves stop happening and cars have to stop more often. Switch messages back on and it comes back down.
 
 ---
 
-## 11. The demo
+## Part 6: The results in plain words
 
-### 11.1 The screen
+Averages over 5 different days of traffic in the pretend town:
 
-- **Header:**
-  - status pills: `CENTRAL: ONLINE/FAILED`, `LINKS CUT: n/24`, `GREENWAVE MESSAGES: ON/OFF`
-  - the sim clock
-  - the speed
-- **Grid view:** three live maps side by side, each with a stat strip.
-- **Focus view:** one large map, switched with tabs, plus a comparison scoreboard. The best value in each row glows green.
-- **Map key:**
+| Town | Ambulance trip | Average wait per car |
+|---|---|---|
+| Central, boss working | 57 seconds | 12 seconds |
+| **Central, boss broken (egg timers)** | **106 seconds** | **29 seconds** |
+| **Greenwave** | **57 seconds** | **13 seconds** |
+| **Greenwave, every wire cut** | **57 seconds** | **15 seconds** |
 
-  | What you see | Meaning |
-  |---|---|
-  | Long green glowing bar | Green light |
-  | Short red bar | Red light |
-  | Amber dot | Stopped car |
-  | Pale dot | Moving car |
-  | White dot with red/blue halo and dashed ring | The ambulance; the ring is its 80m siren range |
-  | Thin cyan line | Comms link |
-  | Red dashed line with ✕ | Cut link |
-  | Dotted grey line | Messages off |
-  | Cyan / red pulses | PLATOON / PRIORITY messages |
-  | Amber TIMER outline | Junction running on fixed timer |
+What this means:
 
-- **Toasts** in the top-right announce each event, including all three ambulance arrival times.
+- When the boss breaks, **the ambulance takes almost twice as long** on egg timers. On Greenwave it doesn't slow down at all, **even with every wire cut**.
+- Cars wait **less than half as long** on Greenwave as on egg timers.
+- Greenwave is **almost as good as a perfect, working boss computer**, without having one.
+- **Chatting helps:** with messages on, Greenwave cars stop about **25% less often** (1.6 stops per car instead of 2.2).
+- **No crashes, ever:** conflicting greens is 0 in every run.
 
-### 11.2 Keyboard shortcuts
+**⚠️ One number that can catch you out: stops per car.**
+- **What you'll see:** egg timers sometimes show *fewer* stops per car than Greenwave. That row may glow green for Central or Fixed.
+- **Why:** egg timers hold green for a long 30 seconds, so cars stop less *often*, but when they do stop they wait **much longer** (about 29 seconds vs 13).
+- **How to use it:** compare **Greenwave with messages on vs off**. To compare against egg timers, point at **ambulance time** and **average wait**.
 
-| Key | Action | Key | Action |
+**Live numbers wobble a little.** The live Greenwave town runs each light separately and for real, so its numbers change slightly each run. That's normal. Read the real numbers from the pop-up banners during the demo.
+
+---
+
+## Part 7: The demo, step by step
+
+Before you start:
+- type `npm run serve` in the project folder
+- open **http://localhost:8080/**
+- close other big programs (the laptop has run low on memory before)
+- try it once on the real projector
+
+| Step | You press | You say | They see |
 |---|---|---|---|
-| `F` | Fail central | `M` | Greenwave messages on/off |
-| `A` | Dispatch ambulance | `O` | Show messages (pulses) |
-| `C` | Cut all links | `V` | Grid ↔ focus view |
-| `R` | Restore all links | `1` `2` `3` | Focus Central / Fixed / Greenwave |
-| click a link | Cut / restore that link | `[` `]` | Slower / faster (1×, 3×, 5×) |
-| `Shift+R` | Reset | | |
-
-### 11.3 Demo script (about 2 minutes)
-
-1. **Set the scene (20s).** "Three copies of the same city, the same cars, the same seed. Left: a working central system. Middle: what happens when it fails: fixed timers. Right: Greenwave, no centre at all."
-2. **Press `F`.** "The central controller just failed." The TIMER outlines appear and Central's wait starts climbing. "This is the real-world failure mode."
-3. **Press `A`.** "Ambulance dispatched in all three cities."
-4. **Press `O`.** "Those red pulses are the ambulance's request, passed junction to junction ahead of it."
-5. **Click links on its path, then press `C`.** "Now I'm cutting the network, all of it. Greenwave junctions can't talk to anyone."
-6. **Wait for the arrival toasts.** "Greenwave: 57 seconds, never stopped. The failed central system: much longer." *Read the actual numbers from the toast.*
-7. **Press `R`, wait a moment, then press `M`.** "So what does talking buy us? Turn off neighbour messages… watch stops per car rise in the next minute. That's the green wave disappearing. Turn it back on and it recovers."
-8. **Press `V`, then `3`.** Show the focus view and scoreboard. "Zero conflicting greens in every panel. Safety is enforced inside each junction, not by a supervisor."
-9. **If a judge asks about independence,** open DevTools and show the 16 junction worker threads.
-
-**Before presenting:**
-- Start the server with `npm run serve`, then open http://localhost:8080/.
-- Rehearse once on the actual projector or 1920×1080 screen. That layout hasn't been checked on the dev laptop.
-- Close heavy apps. The laptop has run low on memory before.
+| 1 | nothing (wait 20 s) | "Three copies of the same town with the same cars. Left: a boss computer. Middle: what happens when it breaks. Right: Greenwave, with no boss at all." | Cars flowing in all three towns. |
+| 2 | `F` | "The boss computer just broke." | TIMER boxes on Central; queues start growing. |
+| 3 | `A` | "An emergency: ambulance sent across all three towns." | A flashing ambulance in each town. |
+| 4 | `O` | "Those little red dots are the lights warning each other that the ambulance is coming." | Red dots running ahead of the ambulance. |
+| 5 | click a few wires, then `C` | "Now I'm cutting the wires. All of them. The Greenwave lights can't talk to anyone." | Red ✕ everywhere. |
+| 6 | wait | "Greenwave's ambulance: 57 seconds, never stopped. The broken city: about twice as long." | Arrival banners with the times. |
+| 7 | `R`, then `M` | "So what does chatting buy us? I'll switch it off… watch stops per car go up. That's the green wave disappearing." | Greenwave's stops number rises over the next minute. |
+| 8 | `V`, then `3` | "And look at the bottom row: zero crashes, in every town. Every light enforces safety itself." | Big map and scoreboard. |
 
 ---
 
-## 12. Engineering quality (for the technical judges)
+## Part 8: The theme, "Composition"
 
-- **95 automated tests** (`npm test`, Node's built-in runner, zero dependencies). They cover:
-  - **safety:** a 10,000-step randomised test of the brain, plus 0 conflicts in every mode under random link cuts
-  - **the ambulance:** it gets through with all links cut, within 2× free-flow time, on 5 seeds, and faster than fixed timers
-  - **determinism:** same seed, same snapshot, in every mode
-  - **independence:** the brain-isolation test
-  - **the pitch claim:** "messages reduce stops" is a test, so a later change that broke green waves would fail the build
-- **Test-driven:** every feature's test was written and seen to fail before the code was written.
-- **Two hosts for one brain:**
-  - **Live:** one Web Worker per junction, free-running on its own timer. That's realistic and asynchronous, but not exactly repeatable.
-  - **Tests:** an in-process lockstep host. Same brain code, fully deterministic.
+**The simple version:** a big result **built up from lots of small pieces**.
 
-  So the demo is honest *and* the tests are reproducible.
-- **Zero dependencies, fully offline.** Plain JavaScript modules, no build step and a 30-line static server. Nothing to download at the venue.
-- **The server binds to localhost only,** so nobody on the hackathon Wi-Fi can reach it.
-- **Rendering:**
-  - Canvas 2D, with the static roads drawn once and cached
-  - the simulation runs on a timer, separate from screen refresh, so a slow frame never slows the simulation
-  - each frame advances the simulation by at most 0.1s per step, so cars can't "teleport" through red lights after a lag spike
+- **The orchestra with no conductor.** Each musician only listens to the people next to them, but together they play one piece of music. Each traffic light only listens to its neighbours, but together they create green waves and ambulance paths across the whole town. Nobody plans the big picture; it **emerges**.
+- **The program is built from Lego-like blocks:** a little-brain block, a town block and a screen block. The *same* little-brain block works in the website, in our tests, and later in real model traffic lights built with tiny computer chips.
+- **Each decision is built from layers:**
+  - safety first (never two greens)
+  - then "is an ambulance coming?"
+  - then "which way has more cars, counting what my neighbours told me?"
 
 ---
 
-## 13. Honest limitations, and how to answer them
+## Part 9: The sponsor's challenge (Neptune North)
 
-| Limitation | What to say |
-|---|---|
-| Cars accelerate instantly | "A deliberate simplification. Realistic acceleration makes stops more expensive, which would make green waves *more* valuable. It's the next thing we'd add, and we've already prototyped it." |
-| Two phases, single lanes, no protected turns | "Enough to model real conflicts. The brain's interface doesn't change if you add phases; only the scoring does." |
-| Ambulance corridor doesn't beat the siren in our numbers | "In our model the siren fallback is good enough on its own. That's the resilience result: losing comms costs the ambulance nothing. Under heavier traffic or slower acceleration, early warning matters more." |
-| Greenwave makes more stops than fixed timers when cut off | "Fixed timers stop you less often but for much longer. Our cars wait less than half as long. Stops per car shows what *talking* adds within Greenwave." |
-| Under very heavy traffic, Greenwave's advantage shrinks | "Our tuning targets normal city load. Heavy saturation needs longer minimum greens, which is a parameter, not an architecture change." |
-| Simulation, not hardware | "The brain is a pure function with no browser code, built to be ported to microcontrollers. That separation was a requirement from the start." |
-| Only one ambulance at a time | "Messages carry an ambulance ID, so the protocol supports several; we limited the demo to one." |
+The challenge asks for systems that:
+
+1. **work together**
+2. **without a boss** giving instructions
+3. **and keep working when messages can't get through**
+
+| They asked for | Greenwave does it by… | You can prove it by… |
+|---|---|---|
+| Working together | Lights warn each other about cars and ambulances | Messages OFF → stops per car rises |
+| No boss | Each light decides for itself; nothing else ever picks a light's colour | Each light runs as its **own separate program** on the computer (16 of them) |
+| Keep working when messages fail | A light without messages just uses its own eyes and ears | Cut all wires → Greenwave carries on and the ambulance still gets through |
+| (Judges will check the lights really are independent) | A test stops the program from being built if a light's brain ever peeks at anything except its own senses and its messages | Point at the test in the code |
 
 ---
 
-## 14. Likely judge questions
+## Part 10: Tricky questions, simple answers
 
-**"Are the junctions *really* independent?"**
-> Each junction runs in its own Web Worker thread. The only things it receives are its own sensor readings and messages from adjacent links. Its code can't import anything outside its folder, and can't use clocks, randomness or global state. An automated test enforces that. It doesn't even know its own position in the grid; it knows "my northern neighbour".
+**"Are the lights really independent?"**
+> Yes. Each light runs as its own separate program. All it ever receives is what its own sensors see and notes from its four neighbours. It doesn't even know where it is in the town. We have an automatic check that fails if that's ever broken.
 
-**"Isn't the world/main thread a hidden central controller?"**
-> No. The world plays the part of physics and wires. It moves cars, reports what each junction's sensors would see, and carries messages over links that can be cut. It never chooses a light. In the physical model, that role is played by real cars, real sensors and real cables.
+**"Isn't the computer running the town secretly the boss?"**
+> No. That part only plays the role of the real world: it moves the cars, tells each light what its sensors would see, and carries notes along the wires. It never chooses a light's colour. In the real world, that's just roads, cars and cables.
 
-**"What happens when a link fails?"**
-> The message is simply lost. The junction's decision rule has a term for neighbours' forecasts. With no forecasts arriving, that term is zero, and the junction becomes a pure local controller. There's no failure detection and no mode switch, so there's nothing that can fail.
+**"What happens when a wire is cut?"**
+> The note is lost, that's all. The light was adding "cars my neighbours warned me about" to its count. Now that part is zero, so it just uses its own queue counts. There's no special emergency mode that could go wrong.
 
-**"How do you guarantee safety without a supervisor?"**
-> Two ways. The junction can only output one phase at a time, so two conflicting greens can't even be represented. And every change between greens must pass through at least 2 seconds of all-red, which is longer than the 1.5 seconds a car takes to cross. The world independently watches for any car conflict inside a junction. That counter has been zero in every run.
+**"How do you stop crashes without someone checking?"**
+> A light can only hold one choice at a time, so "both green" can't happen. And it always goes all-red for 2 seconds before switching, which is longer than a car needs to cross. We also count crashes separately, and it's been zero every time.
 
-**"Why not just make the central system more reliable?"**
-> Redundancy reduces the chance of failure. It doesn't change what happens when failure comes, and a network partition can still cut junctions off. Greenwave makes failure boring: every junction already knows how to run on its own.
+**"Why not just build a stronger boss computer?"**
+> Backups make breaking less likely, but they don't change what happens when it does break. And cut wires can still cut lights off from the boss. With Greenwave, breaking things is boring: every light already knows how to cope alone.
 
-**"Why did you pick this algorithm?"**
-> Max-pressure needs only local data and is simple to verify. Adding neighbours' forecasts gives coordination for free. It degrades smoothly when comms fail. Negotiated timing offsets break when links are cut, and machine learning couldn't be trained, verified or explained in a weekend.
+**"Is it fair to compare?"**
+> All three towns get exactly the same cars at the same times. And we gave our boss computer superpowers it wouldn't have in real life. We still come close to it while it works, and beat it easily when it breaks.
 
-**"How do you know your comparison is fair?"**
-> All three cities get the identical, pre-generated traffic from the same seed. Our central baseline has perfect, instant knowledge, which is better than real systems. We beat the *failed* centre by a wide margin and come close to the *working* one.
-
-**"Does it scale?"**
-> Each junction only ever talks to four neighbours, so the work per junction is constant no matter how big the city gets. A central system has to handle every junction. Our 4×4 grid is a demo size, not a limit.
+**"Would this work in a bigger city?"**
+> Yes. Each light only ever talks to four neighbours, however big the city gets. A boss computer has to handle every light in the city.
 
 **"What would you do next?"**
-> Port the brain to microcontrollers for the physical model. Add realistic acceleration. Add more signal phases. And tune minimum greens for heavy traffic.
+> Put the little brain onto real tiny computer chips in a model town. Make cars speed up gradually like real cars. Add turning arrows.
 
 ---
 
-## 15. File map (if you're asked to show code)
+## Part 11: Weak spots, and how to answer honestly
 
-| File | What's in it |
+| Weak spot | What to say |
 |---|---|
-| `src/brain/junction.js` | The agent: `step()`, forecasts, priority, siren, refresh |
-| `src/brain/phases.js` | Safety state machine, max-pressure choice, forecast weight |
-| `src/world/world.js` | Cars, sensors, links, ambulance, conflict counter, snapshot |
-| `src/world/schedule.js` | Seeded traffic schedule and the ambulance route |
-| `src/controllers/greenwave-workers.js` + `src/worker/junction-worker.js` | One Web Worker per junction (live demo) |
-| `src/controllers/greenwave-lockstep.js` | Same brains in-process (tests) |
-| `src/controllers/central.js` | The central baseline, with hub reachability |
-| `src/controllers/fixed.js` | The fixed-timer fallback |
-| `src/display/*` | The control-room UI |
-| `test/brain-isolation.test.js` | The independence guarantee |
-| `docs/superpowers/specs/` | Design specs, with every decision written down |
+| Cars speed up instantly (real cars take a few seconds) | "That's a simplification. Real cars take time to get moving, which makes stopping cost more. So green waves would help even more in real life." |
+| The ambulance doesn't go *faster* with messages than with just siren ears | "In our town the siren backup is good enough on its own. That's the point: losing the wires costs the ambulance nothing." |
+| Egg timers sometimes have fewer stops per car | "Fewer stops, but each one is much longer. Our cars wait less than half as long." |
+| In very, very heavy traffic, Greenwave's lead shrinks | "We tuned it for normal traffic. Rush-hour gridlock needs longer greens, which is just a setting." |
+| It's a simulation, not real lights | "The little brain was built to move onto real chips. It doesn't depend on the website at all." |
+| Only one ambulance at a time | "Messages carry an ambulance name tag, so it could handle several. We kept the demo simple." |
 
 ---
 
-## 16. Glossary
+## Part 12: Grown-up words cheat sheet
 
-| Term | Meaning |
+Use these to sound expert. Left: what you understand. Right: what to say.
+
+| What it means | Say this |
 |---|---|
-| **Approach** | A road coming *into* a junction, named by the side it comes from (N, E, S, W) |
-| **Phase** | Which directions have green: `NS`, `EW`, or `ALL_RED` |
-| **All-red** | Every light red, for at least 2 s, to clear the junction before switching |
-| **Max-pressure** | Serve the direction with the most waiting (and soon-arriving) cars |
-| **Hysteresis** | Only switch when the other side is clearly busier, to avoid flip-flopping |
-| **Platoon** | A group of cars travelling together |
-| **Green wave** | Successive junctions turning green as a platoon arrives, so it doesn't stop |
-| **Corridor** | A chain of junctions turning green ahead of an ambulance |
-| **V2I** | Vehicle-to-infrastructure radio: the ambulance talking to its first junction |
-| **Orphaned junction** | A Central-mode junction with no network path to the hub, so it runs on its timer |
-| **Seed** | The number that fixes the random traffic, so a run can be repeated exactly |
-| **Lockstep host** | Runs all 16 brains in a fixed order each step: deterministic, used by tests |
-| **Web Worker** | A separate browser thread; one per junction in the live demo |
+| No boss computer | **Decentralised** / **no central controller** / **no single point of failure** |
+| Each light has its own little brain | Each junction is an **autonomous agent** |
+| Each light runs as its own separate program | **One Web Worker (thread) per junction** |
+| Lights only talk to the four next to them | **Nearest-neighbour communication** |
+| The wires between lights | **Communication links** |
+| Cutting wires | **Simulating network partitions** / **link failures** |
+| Egg timers | **Fixed-time control** / **fixed-time fallback plans** |
+| Counting cars to decide who goes | **Max-pressure control** |
+| Only switching if the other side is clearly busier | **Hysteresis** |
+| "5 cars coming your way in 10 seconds" | A **platoon forecast** (a PLATOON message) |
+| Lights turning green one after another for a group of cars | A **green wave** (an **emergent** behaviour) |
+| Passing the ambulance warning ahead | A **hop-by-hop priority corridor** (a PRIORITY message) |
+| The ambulance radioing the first light | **V2I**: vehicle-to-infrastructure communication |
+| Siren ears as a backup | **Local siren detection fallback** |
+| It gets a bit worse, not broken, when wires fail | **Graceful degradation** |
+| Never two greens; 2 seconds all-red | **Locally enforced safety invariant**; **all-red clearance interval** |
+| Same cars every time, so the comparison is fair | **Seeded, deterministic traffic** / **reproducible** |
+| The automatic check that lights don't peek | An **isolation test** enforcing **no shared global state** |
+| The little brain doesn't depend on the website | A **pure, portable** decision function, ready for **microcontrollers** |
+| Big result from small pieces | **Emergent behaviour from local rules**, which is **composition** |

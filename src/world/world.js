@@ -10,6 +10,10 @@ export const QUEUE_RANGE = 60;   // m
 export const MAX_DT = 0.1;       // s
 export const LINK_LATENCY_S = 0.05;
 export const SIREN_RANGE = 80;   // m
+// Drawing geometry for snapshots (does not affect physics).
+const BOX_HALF = 6;                                        // m from junction centre to box edge
+const LANE_OFFSET = 3;                                     // m from road centre to lane centre (drive on the left)
+const ROAD_DRAW_SCALE = (SPACING - 2 * BOX_HALF) / SPACING; // fit a 120 m segment between two box edges
 export const V2I_RANGE = 200;    // m
 const LIGHTS = ['NS', 'EW', 'ALL_RED'];
 const NJ = N * N;
@@ -232,20 +236,39 @@ export function createWorld({ seed, schedule, rate } = {}) {
     },
 
     snapshot() {
+      // Drawing positions only (physics is unchanged). A road segment is drawn between the edges of the
+      // two junction boxes, and a car inside a box moves along a path from its entry edge to its exit
+      // edge (curving on turns), so cars glide through junctions instead of freezing at the centre.
       const cars = [];
+      const laneOf = (p, side, heading, along) => {      // point `along` m from centre towards `side`, in the lane of `heading`
+        const v = dirVec(side), l = dirVec(left(heading));
+        return { x: p.x + v.x * along + l.x * LANE_OFFSET, y: p.y + v.y * along + l.y * LANE_OFFSET };
+      };
       for (let j = 0; j < NJ; j++) {
         const p = junctionPos(j);
         for (const d of DIRS) {
-          const h = opposite(d), back = dirVec(d), lat = dirVec(left(h));
+          const h = opposite(d);
           for (const c of seg(j, d)) {
-            cars.push({
-              x: r2(p.x + back.x * (c.dist + 6) + lat.x * 3),
-              y: r2(p.y + back.y * (c.dist + 6) + lat.y * 3),
-              heading: h, isAmbulance: c.isAmbulance, stopped: c.v < 1,
-            });
+            const pt = laneOf(p, d, h, BOX_HALF + c.dist * ROAD_DRAW_SCALE);
+            cars.push({ x: r2(pt.x), y: r2(pt.y), heading: h, isAmbulance: c.isAmbulance, stopped: c.v < 1 });
           }
         }
-        for (const b of boxes[j]) cars.push({ x: p.x, y: p.y, heading: b.exit, isAmbulance: b.car.isAmbulance, stopped: false });
+        for (const b of boxes[j]) {
+          const inHeading = opposite(b.car.d);
+          const a = laneOf(p, b.car.d, inHeading, BOX_HALF);   // entry edge
+          const z = laneOf(p, b.exit, b.exit, BOX_HALF);       // exit edge
+          const f = Math.min(1, Math.max(0, 1 - b.t / BOX_S));
+          let x, y;
+          if (inHeading === b.exit) { x = a.x + (z.x - a.x) * f; y = a.y + (z.y - a.y) * f; }
+          else {                                               // turn: quadratic curve through the lane corner
+            const li = dirVec(left(inHeading)), lo = dirVec(left(b.exit));
+            const cx = p.x + (li.x + lo.x) * LANE_OFFSET, cy = p.y + (li.y + lo.y) * LANE_OFFSET;
+            const u = 1 - f;
+            x = u * u * a.x + 2 * u * f * cx + f * f * z.x;
+            y = u * u * a.y + 2 * u * f * cy + f * f * z.y;
+          }
+          cars.push({ x: r2(x), y: r2(y), heading: b.exit, isAmbulance: b.car.isAmbulance, stopped: false });
+        }
       }
       const m = world.metrics();
       return {

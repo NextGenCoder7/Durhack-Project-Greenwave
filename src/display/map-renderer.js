@@ -61,7 +61,7 @@ export function createMapRenderer(canvas) {
   function noGlow() { ctx.shadowBlur = 0; }
 
   function draw(s, { showMessages = false, hoverLink = null, time = 0, reducedMotion = false } = {}) {
-    if (!cssSize) resize();
+    resize();                                                // cheap no-op unless size or DPR changed (e.g. moved to a projector)
     if (!cssSize) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);

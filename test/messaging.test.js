@@ -48,3 +48,10 @@ test('messaging off means exactly "no cooperation": same metrics as all links cu
   runHeadless(cut, createGreenwaveLockstep(), 600);
   assert.deepEqual(off.snapshot().metrics, cut.snapshot().metrics);
 });
+
+test('snapshot reports whether central has failed', () => {
+  const w = createWorld({ seed: 1 });
+  assert.equal(w.snapshot().centralFailed, false);
+  w.failCentral();
+  assert.equal(w.snapshot().centralFailed, true);
+});

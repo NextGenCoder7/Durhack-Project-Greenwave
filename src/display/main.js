@@ -46,7 +46,7 @@ const broadcast = fn => pending.push(fn);
 const actions = {
   failCentral() { broadcast(w => w.failCentral()); toast('Central controller failed', 'stop'); },
   spawnAmbulance() {
-    if (!canSpawnAmbulance(panels.map(p => p.world))) return;
+    if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) return;
     broadcast(w => w.spawnAmbulance());
     arrivals = [];
     toast('Ambulance dispatched', 'data');
@@ -128,13 +128,13 @@ function setPill(el, text, cls) {
 }
 
 function updateHeader(snaps) {
-  $('clock').textContent = `t = ${panels[0].world.now.toFixed(1)} s`;
+  $('clock').textContent = `t = ${snaps[0].t.toFixed(1)} s`;
   $('speed-label').textContent = `${ui.speed}×`;
-  const failed = panels[0].world.centralFailed;
+  const failed = snaps[0].centralFailed;
   setPill($('pill-central'), failed ? 'CENTRAL: FAILED' : 'CENTRAL: ONLINE', failed ? 'bad' : '');
   const cut = snaps[0].links.filter(l => !l.up).length;
   setPill($('pill-links'), `LINKS CUT: ${cut}/24`, cut ? 'warn' : '');
-  const on = panels[2].world.messaging;
+  const on = snaps[2].messaging;
   setPill($('pill-messages'), `GREENWAVE MESSAGES: ${on ? 'ON' : 'OFF'}`, on ? '' : 'bad');
   const btn = $('btn-messages');
   btn.firstChild.textContent = `Messages: ${on ? 'ON' : 'OFF'}`;

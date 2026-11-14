@@ -157,6 +157,20 @@ body.view-grid #focus-view, body.view-focus #grid-view { display: none; }
 .toast.kind-data { border-left-color: var(--data); }
 .toast.enter, .toast.leave { opacity: 0; transform: translateX(12px); }
 
+/* Laptop screens: keep the dock on one row so the maps get the height. */
+@media (max-width: 1500px), (max-height: 760px) {
+  header { padding: 6px 14px; gap: 10px; }
+  .wordmark { font-size: 18px; }
+  .pill { font-size: 11px; padding: 3px 9px; }
+  button { padding: 4px 9px; font-size: 13px; }
+  #dock { gap: 8px; padding: 10px 14px 8px; }
+  .group { padding: 5px 7px; gap: 6px; }
+  .hint { display: none; }
+  #views { padding: 8px 14px; }
+  .map-panel { padding: 8px; gap: 6px; }
+  .map-panel h2 { font-size: 15px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }

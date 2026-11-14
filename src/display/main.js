@@ -4,7 +4,7 @@ import { createCentral } from '../controllers/central.js';
 import { createFixed } from '../controllers/fixed.js';
 import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
 import { canSpawnAmbulance, linkAt } from './demo-rules.js';
-import { junctionPos, dirVec, DIRS, PHASE_OF, WORLD_SIZE } from '../world/grid.js';
+import { createMapRenderer } from './map-renderer.js';
 
 const MAX_FRAME_S = 0.25;             // cap real time per sim step (hidden tab, slow laptop)
 const SUB_S = 0.1;                    // world.tick limit
@@ -130,63 +130,47 @@ function updateHeader(snaps) {
   $('view-toggle').firstChild.textContent = ui.view === 'grid' ? 'Focus view' : 'Grid view';
 }
 
-// ---------------- Temporary drawing (replaced by map-renderer.js in Task 3) ----------------
-const gridCanvases = [...document.querySelectorAll('#grid-view canvas')];
+// ---------------- Maps ----------------
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+let reducedMotion = reducedMotionQuery.matches;
+reducedMotionQuery.addEventListener('change', e => { reducedMotion = e.matches; });
 
-function fitCanvas(canvas) {
-  const size = Math.floor(Math.min(canvas.parentElement.clientWidth, canvas.parentElement.clientHeight));
-  const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== Math.round(size * dpr)) {
-    canvas.width = canvas.height = Math.round(size * dpr);
-    canvas.style.width = canvas.style.height = `${size}px`;
-  }
-  return { size, dpr };
+const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas, i) => ({ canvas, renderer: createMapRenderer(canvas), panelIndex: () => i }));
+const allMaps = gridMaps;
+let lastSnaps = [];
+let hover = null;                    // { canvas, link } for the link under the cursor
+
+function linkUnder(map, e) {
+  const s = lastSnaps[map.panelIndex()];
+  if (!s) return null;
+  const { x, y } = map.renderer.toWorld(e.clientX, e.clientY);
+  return linkAt(x, y, s.links, CLICK_TOL_PX / map.renderer.pxPerMetre);
 }
 
-function drawTemp(canvas, s) {
-  const { size, dpr } = fitCanvas(canvas);
-  const ctx = canvas.getContext('2d');
-  const S = (size / WORLD_SIZE) * dpr;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(S, 0, 0, S, 0, 0);
-  ctx.strokeStyle = '#1c2a44'; ctx.lineWidth = 14;
-  for (let i = 0; i < 4; i++) {
-    const { x, y } = junctionPos(i * 5);
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD_SIZE, y); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_SIZE); ctx.stroke();
-  }
-  for (const l of s.links) {
-    const a = junctionPos(l.a), b = junctionPos(l.b);
-    ctx.strokeStyle = l.up ? '#38bdf8' : '#ff5470'; ctx.lineWidth = l.up ? 1 : 3;
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-  }
-  for (const j of s.junctions) {
-    const c = junctionPos(j.id);
-    for (const d of DIRS) {
-      const v = dirVec(d);
-      ctx.fillStyle = j.lights === PHASE_OF[d] ? '#3dffa8' : '#ff5470';
-      ctx.fillRect(c.x + v.x * 10 - 3, c.y + v.y * 10 - 3, 6, 6);
-    }
-  }
-  for (const car of s.cars) {
-    ctx.fillStyle = car.isAmbulance ? '#ff3355' : car.stopped ? '#ffb547' : '#9fb3d1';
-    ctx.beginPath(); ctx.arc(car.x, car.y, car.isAmbulance ? 7 : 3, 0, Math.PI * 2); ctx.fill();
-  }
-}
-
-gridCanvases.forEach((canvas, i) => {
-  canvas.addEventListener('click', e => {
-    const r = canvas.getBoundingClientRect();
-    const S = r.width / WORLD_SIZE;
-    const link = linkAt((e.clientX - r.left) / S, (e.clientY - r.top) / S, panels[i].world.snapshot().links, CLICK_TOL_PX / S);
-    if (link) cutOrRestore(link);
+for (const map of allMaps) {
+  map.canvas.addEventListener('mousemove', e => {
+    const link = linkUnder(map, e);
+    hover = link ? { canvas: map.canvas, link } : null;
+    map.canvas.style.cursor = link ? 'pointer' : 'default';
   });
-});
+  map.canvas.addEventListener('mouseleave', () => { if (hover?.canvas === map.canvas) hover = null; });
+  map.canvas.addEventListener('click', e => { const link = linkUnder(map, e); if (link) cutOrRestore(link); });
+  new ResizeObserver(() => map.renderer.resize()).observe(map.canvas.parentElement);
+}
 
-function frame() {
-  const snaps = panels.map(p => p.world.snapshot());
-  if (ui.view === 'grid') snaps.forEach((s, i) => drawTemp(gridCanvases[i], s));
-  updateHeader(snaps);
+function drawMap(map, time) {
+  map.renderer.draw(lastSnaps[map.panelIndex()], {
+    showMessages: ui.showMessages,
+    hoverLink: hover?.canvas === map.canvas ? hover.link : null,
+    time,
+    reducedMotion,
+  });
+}
+
+function frame(time) {
+  lastSnaps = panels.map(p => p.world.snapshot());   // one snapshot per world per frame
+  if (ui.view === 'grid') for (const m of gridMaps) drawMap(m, time);
+  updateHeader(lastSnaps);
   requestAnimationFrame(frame);
 }
 

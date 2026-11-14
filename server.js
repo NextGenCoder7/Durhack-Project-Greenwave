@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT) || 8080;
+// Loopback only by default: on shared (hackathon) Wi-Fi nobody else can reach the repo.
+// Set HOST=0.0.0.0 deliberately to present from another device.
+const HOST = process.env.HOST || '127.0.0.1';
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json' };
 
 createServer(async (req, res) => {
@@ -19,4 +22,4 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404); res.end('not found');
   }
-}).listen(PORT, () => console.log(`Greenwave: http://localhost:${PORT}/`));
+}).listen(PORT, HOST, () => console.log(`Greenwave: http://${HOST === '127.0.0.1' ? 'localhost' : HOST}:${PORT}/`));

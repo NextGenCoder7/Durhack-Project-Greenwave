@@ -90,12 +90,15 @@ export function createWorld({ seed, schedule, rate } = {}) {
 
     // --- Link layer ("the wire"). Junctions exchange messages only through here. ---
     recentMessages: [],
+    /** Neighbour messaging switch (demo: "messages off"). Independent of link up/down state. */
+    messaging: true,
+    setMessaging(on) { world.messaging = !!on; },
 
     send(fromJ, dir, msg) {
       const to = neighbour(fromJ, dir);
       if (to === null) return;
       const key = linkKey(fromJ, to);
-      if (!linkState.get(key)) return;
+      if (!world.messaging || !linkState.get(key)) return;
       inboxes[to].push({ deliverAt: world.now + LINK_LATENCY_S, msg, link: key });
       world.recentMessages.push({ a: fromJ, b: to, type: msg.type, t: world.now });
     },
@@ -109,7 +112,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
       const out = [], keep = [];
       for (const m of inboxes[j]) {
         if (m.deliverAt > world.now + 1e-9) keep.push(m);
-        else if (m.link === null || linkState.get(m.link)) out.push(m.msg);
+        else if (m.link === null || (world.messaging && linkState.get(m.link))) out.push(m.msg);
       }
       inboxes[j] = keep;
       return out;
@@ -250,6 +253,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
         junctions: world.lights.map((lights, id) => ({ id, lights, orphaned: world.orphaned[id] })),
         cars,
         links: allLinks().map(([a, b]) => ({ a, b, up: world.linkUp(a, b) })),
+        messaging: world.messaging,
         messages: world.recentMessages.map(m => ({ a: m.a, b: m.b, type: m.type, age: r2(world.now - m.t) })),
         metrics: { ...m, avgWait: r2(m.avgWait), rollingWait: r2(m.rollingWait), stopsPerCar: r2(m.stopsPerCar), rollingStopsPerCar: r2(m.rollingStopsPerCar) },
       };

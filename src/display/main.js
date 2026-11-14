@@ -43,6 +43,7 @@ function build() {
   });
   pending = [];
   last = performance.now();
+  $('gwmsgs').checked = true;   // new worlds start with messaging on
 }
 
 const broadcast = fn => pending.push(fn);
@@ -68,6 +69,11 @@ $('fail').onclick = () => broadcast(w => w.failCentral());
 $('cutall').onclick = () => broadcast(w => w.cutAll());
 $('restore').onclick = () => broadcast(w => w.restoreAll());
 $('reset').onclick = () => build();
+// Greenwave-only: switch neighbour cooperation off/on without touching links or the other panels.
+$('gwmsgs').onchange = e => {
+  const on = e.target.checked;
+  pending.push((w, p) => { if (p.ctrl.name === 'greenwave') w.setMessaging(on); });
+};
 $('speed').onchange = e => { speed = Number(e.target.value); for (const p of panels) p.ctrl.setSpeed?.(speed); };
 
 // Simulation runs on a timer (not tied to frame rate); drawing runs on animation frames.
@@ -75,7 +81,7 @@ function simStep() {
   const now = performance.now();
   let sim = Math.min((now - last) / 1000, MAX_FRAME_S) * speed;
   last = now;
-  for (const fn of pending) for (const p of panels) fn(p.world);
+  for (const fn of pending) for (const p of panels) fn(p.world, p);
   pending = [];
   while (sim > 1e-9) {
     const dt = Math.min(SUB_S, sim);
@@ -98,6 +104,7 @@ function fmtAmb(a) {
 function draw(p) {
   const s = p.world.snapshot(), ctx = p.ctx, m = s.metrics;
   p.stats.textContent =
+    (s.messaging ? '' : 'MESSAGES OFF: junctions use only their own sensors\n') +
     `Ambulance     ${fmtAmb(m.ambulance)}\n` +
     `Avg car wait  ${m.avgWait.toFixed(1)} s   (last 60 s: ${m.rollingWait.toFixed(1)} s)\n` +
     `Stops per car ${m.stopsPerCar.toFixed(2)}   (last 60 s: ${m.rollingStopsPerCar.toFixed(2)})\n` +
@@ -118,7 +125,8 @@ function draw(p) {
   for (const l of s.links) {
     const a = junctionPos(l.a), b = junctionPos(l.b);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-    if (l.up) { ctx.setLineDash([]); ctx.strokeStyle = '#999'; ctx.lineWidth = 1; }
+    if (l.up && !s.messaging) { ctx.setLineDash([2, 4]); ctx.strokeStyle = '#bbb'; ctx.lineWidth = 2; }
+    else if (l.up) { ctx.setLineDash([]); ctx.strokeStyle = '#999'; ctx.lineWidth = 1; }
     else { ctx.setLineDash([6, 5]); ctx.strokeStyle = '#d00'; ctx.lineWidth = 4; }
     ctx.stroke();
   }

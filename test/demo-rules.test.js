@@ -34,3 +34,16 @@ test('bestIndex: lowest value wins', () => assert.equal(bestIndex([57.1, 106, 58
 test('bestIndex: ties go to the first index', () => assert.equal(bestIndex([2, 1.5, 1.5]), 1));
 test('bestIndex: nulls are ignored', () => assert.equal(bestIndex([null, 3, 2]), 2));
 test('bestIndex: all null gives null', () => assert.equal(bestIndex([null, null, null]), null));
+
+import { detectEvents } from '../src/display/demo-rules.js';
+const A = (state, journey = 0) => ({ label: 'Greenwave', state, journey });
+test('detectEvents: driving -> arrived gives one event', () =>
+  assert.deepEqual(detectEvents([A('driving', 50)], [A('arrived', 58.7)]), [{ type: 'arrived', label: 'Greenwave', journey: 58.7 }]));
+test('detectEvents: none -> driving and arrived -> arrived give none', () => {
+  assert.deepEqual(detectEvents([A('none')], [A('driving', 1)]), []);
+  assert.deepEqual(detectEvents([A('arrived', 58.7)], [A('arrived', 58.7)]), []);
+});
+test('detectEvents: two modes arriving together give two events', () =>
+  assert.equal(detectEvents([A('driving'), A('driving')], [A('arrived', 57), A('arrived', 74)]).length, 2));
+test('detectEvents: null prev (after reset) gives none', () =>
+  assert.deepEqual(detectEvents(null, [A('arrived', 58.7)]), []));

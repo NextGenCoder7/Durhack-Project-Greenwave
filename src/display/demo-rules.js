@@ -27,6 +27,18 @@ export function bestIndex(values) {
   return best;
 }
 
+/**
+ * Ambulance arrivals between two frames. prev/now: [{ label, state, journey }] per panel, same order.
+ * prev === null (first frame, or just after a reset) never produces events.
+ */
+export function detectEvents(prev, now) {
+  if (!prev) return [];
+  return now.flatMap((n, i) =>
+    prev[i] && prev[i].state === 'driving' && n.state === 'arrived'
+      ? [{ type: 'arrived', label: n.label, journey: n.journey }]
+      : []);
+}
+
 /** All panels must run the same ambulance: only spawn when no panel has one driving. */
 export function canSpawnAmbulance(worlds) {
   return worlds.every(w => w.metrics().ambulance.state !== 'driving');

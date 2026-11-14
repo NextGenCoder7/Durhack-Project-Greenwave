@@ -3,7 +3,8 @@ import { createWorld } from '../world/world.js';
 import { createCentral } from '../controllers/central.js';
 import { createFixed } from '../controllers/fixed.js';
 import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
-import { canSpawnAmbulance, linkAt } from './demo-rules.js';
+import { canSpawnAmbulance, linkAt, detectEvents } from './demo-rules.js';
+import { showToast } from './toasts.js';
 import { createMapRenderer } from './map-renderer.js';
 import { renderScoreboard, renderStatStrips } from './scoreboard.js';
 
@@ -11,6 +12,7 @@ const MAX_FRAME_S = 0.25;             // cap real time per sim step (hidden tab,
 const SUB_S = 0.1;                    // world.tick limit
 const CLICK_TOL_PX = 10;              // how close to a link a click must land
 const SPEEDS = [1, 3, 5];
+const TAB_LABELS = ['Central', 'Fixed', 'Greenwave'];
 const PANEL_DEFS = [
   { key: 'central', label: 'Central', make: () => createCentral() },
   { key: 'fixed', label: 'Fixed (central failed)', make: () => createFixed() },
@@ -23,6 +25,9 @@ const $ = id => document.getElementById(id);
 
 const ui = { view: 'grid', focus: 2, showMessages: false, messagesOn: true, speed: 3 };
 let panels = [];
+let arrivals = [];                    // this ambulance's arrivals so far, in arrival order
+let prevAmb = null;                   // last frame's ambulance states, for arrival toasts
+const toast = (text, kind) => showToast(text, { kind, reducedMotion });
 let pending = [];                     // commands applied to all worlds at the same sim time
 let last = performance.now();
 
@@ -39,21 +44,27 @@ const broadcast = fn => pending.push(fn);
 
 // ---------------- Actions (shared by dock buttons and keyboard) ----------------
 const actions = {
-  failCentral() { broadcast(w => w.failCentral()); },
-  spawnAmbulance() { if (canSpawnAmbulance(panels.map(p => p.world))) broadcast(w => w.spawnAmbulance()); },
-  cutAll() { broadcast(w => w.cutAll()); },
-  restoreAll() { broadcast(w => w.restoreAll()); },
+  failCentral() { broadcast(w => w.failCentral()); toast('Central controller failed', 'stop'); },
+  spawnAmbulance() {
+    if (!canSpawnAmbulance(panels.map(p => p.world))) return;
+    broadcast(w => w.spawnAmbulance());
+    arrivals = [];
+    toast('Ambulance dispatched', 'data');
+  },
+  cutAll() { broadcast(w => w.cutAll()); toast('All links cut', 'stop'); },
+  restoreAll() { broadcast(w => w.restoreAll()); toast('All links restored', 'go'); },
   toggleMessages() {
     ui.messagesOn = !ui.messagesOn;
     const on = ui.messagesOn;
     broadcast((w, p) => { if (p.key === 'greenwave') w.setMessaging(on); });
+    toast(`Greenwave messages ${on ? 'ON' : 'OFF'}`, on ? 'go' : 'stop');
   },
   toggleShowMessages() { ui.showMessages = !ui.showMessages; },
   toggleView() { setView(ui.view === 'grid' ? 'focus' : 'grid'); },
   setFocus(i) { ui.focus = i; setView('focus'); },
   speedDown() { setSpeed(SPEEDS[Math.max(0, SPEEDS.indexOf(ui.speed) - 1)]); },
   speedUp() { setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(ui.speed) + 1)]); },
-  reset() { build(); },
+  reset() { build(); prevAmb = null; arrivals = []; toast('Simulation reset', 'data'); },
 };
 
 function setSpeed(s) {
@@ -71,6 +82,7 @@ function setView(v) {
 function cutOrRestore(link) {
   const { a, b, up } = link;
   broadcast(w => (up ? w.cutLink(a, b) : w.restoreLink(a, b)));
+  toast(`Link ${a}–${b} ${up ? 'cut' : 'restored'}`, up ? 'stop' : 'go');
 }
 
 // Dock and header buttons.
@@ -173,12 +185,18 @@ function drawMap(map, time) {
 
 function frame(time) {
   lastSnaps = panels.map(p => p.world.snapshot());   // one snapshot per world per frame
+  const nowAmb = lastSnaps.map((s, i) => ({ label: TAB_LABELS[i], ...s.metrics.ambulance }));
+  for (const ev of detectEvents(prevAmb, nowAmb)) {
+    arrivals.push(`${ev.label} ${ev.journey.toFixed(1)} s`);
+    toast(`Ambulance arrived: ${arrivals.join(' · ')}`, 'go');
+  }
+  prevAmb = nowAmb;
   if (ui.view === 'grid') {
     for (const m of gridMaps) drawMap(m, time);
     renderStatStrips(strips, lastSnaps);
   } else {
     drawMap(focusMap, time);
-    renderScoreboard(document.getElementById('scoreboard'), lastSnaps, ['Central', 'Fixed', 'Greenwave']);
+    renderScoreboard(document.getElementById('scoreboard'), lastSnaps, TAB_LABELS);
   }
   updateHeader(lastSnaps);
   requestAnimationFrame(frame);

@@ -1,5 +1,5 @@
 // Headless, seeded world: physics, sensors, lights, links and metrics. It never decides lights.
-import { N, DIRS, SPACING, STUB, PHASE_OF, opposite, left, neighbour, junctionPos, dirVec, allLinks } from './grid.js';
+import { N, DIRS, SPACING, STUB, PHASE_OF, opposite, left, neighbour, junctionPos, dirVec, allLinks, linkKey } from './grid.js';
 import { buildSchedule, entryJunction } from './schedule.js';
 import { createMetrics } from './metrics.js';
 
@@ -8,6 +8,7 @@ export const GAP = 7;            // m, minimum gap
 export const BOX_S = 1.5;        // s to cross a junction
 export const QUEUE_RANGE = 60;   // m
 export const MAX_DT = 0.1;       // s
+export const LINK_LATENCY_S = 0.05;
 const LIGHTS = ['NS', 'EW', 'ALL_RED'];
 const NJ = N * N;
 
@@ -24,6 +25,8 @@ export function createWorld({ seed, schedule, rate } = {}) {
   const departures = Array.from({ length: NJ }, () => ({ N: 0, E: 0, S: 0, W: 0 }));
   const pending = Array.from({ length: 16 }, () => []);
   const conflictActive = Array(NJ).fill(false);
+  const linkState = new Map(allLinks().map(([a, b]) => [linkKey(a, b), true]));
+  const inboxes = Array.from({ length: NJ }, () => []); // { deliverAt, msg, link: key | null }
   let next = 0;
 
   const hasRoom = s => s.length === 0 || s[s.length - 1].dist <= SPACING - GAP;
@@ -50,6 +53,39 @@ export function createWorld({ seed, schedule, rate } = {}) {
       departures[j] = { N: 0, E: 0, S: 0, W: 0 };
       return { now: world.now, queues, departures: dep, sirenNear: null };
     },
+
+    // --- Link layer ("the wire"). Junctions exchange messages only through here. ---
+    recentMessages: [],
+
+    send(fromJ, dir, msg) {
+      const to = neighbour(fromJ, dir);
+      if (to === null) return;
+      const key = linkKey(fromJ, to);
+      if (!linkState.get(key)) return;
+      inboxes[to].push({ deliverAt: world.now + LINK_LATENCY_S, msg, link: key });
+      world.recentMessages.push({ a: fromJ, b: to, type: msg.type, t: world.now });
+    },
+
+    /** Short-range radio (ambulance V2I): bypasses links, delivered immediately. */
+    deliverDirect(j, msg) {
+      inboxes[j].push({ deliverAt: world.now, msg, link: null });
+    },
+
+    takeInbox(j) {
+      const out = [], keep = [];
+      for (const m of inboxes[j]) {
+        if (m.deliverAt > world.now + 1e-9) keep.push(m);
+        else if (m.link === null || linkState.get(m.link)) out.push(m.msg);
+      }
+      inboxes[j] = keep;
+      return out;
+    },
+
+    linkUp: (a, b) => !!linkState.get(linkKey(a, b)),
+    cutLink(a, b) { const k = linkKey(a, b); if (linkState.has(k)) linkState.set(k, false); },
+    restoreLink(a, b) { const k = linkKey(a, b); if (linkState.has(k)) linkState.set(k, true); },
+    cutAll() { for (const k of linkState.keys()) linkState.set(k, false); },
+    restoreAll() { for (const k of linkState.keys()) linkState.set(k, true); },
 
     trueApproaches(j) {
       const out = {};
@@ -127,6 +163,10 @@ export function createWorld({ seed, schedule, rate } = {}) {
       }
 
       world.now = now + dt;
+      const cutoff = world.now - 1;
+      if (world.recentMessages.length && world.recentMessages[0].t <= cutoff) {
+        world.recentMessages = world.recentMessages.filter(m => m.t > cutoff);
+      }
     },
 
     metrics() {
@@ -154,7 +194,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
         t: r2(world.now),
         junctions: world.lights.map((lights, id) => ({ id, lights, orphaned: world.orphaned[id] })),
         cars,
-        links: allLinks().map(([a, b]) => ({ a, b, up: true })),
+        links: allLinks().map(([a, b]) => ({ a, b, up: world.linkUp(a, b) })),
         metrics: { ...m, avgWait: r2(m.avgWait), rollingWait: r2(m.rollingWait) },
       };
     },

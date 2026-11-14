@@ -49,3 +49,15 @@ test('pitch claim: neighbour messages cut stops per car (greenwave links up < al
   const up = stops(false), cut = stops(true);
   assert.ok(up < cut, `links up ${up.toFixed(2)} vs all cut ${cut.toFixed(2)}`);
 });
+
+test('snapshot marks a car queued at a red light as stopped', () => {
+  const w = createWorld({ schedule: ONE_CAR });
+  runHeadless(w, lightsCtrl(() => 'ALL_RED'), 20);
+  assert.deepEqual(w.snapshot().cars.map(c => c.stopped), [true]);
+});
+
+test('snapshot marks a car driving on green as not stopped', () => {
+  const w = createWorld({ schedule: ONE_CAR });
+  runHeadless(w, lightsCtrl(() => 'EW'), 5);
+  assert.deepEqual(w.snapshot().cars.map(c => c.stopped), [false]);
+});

@@ -241,11 +241,11 @@ export function createWorld({ seed, schedule, rate } = {}) {
             cars.push({
               x: r2(p.x + back.x * (c.dist + 6) + lat.x * 3),
               y: r2(p.y + back.y * (c.dist + 6) + lat.y * 3),
-              heading: h, isAmbulance: c.isAmbulance,
+              heading: h, isAmbulance: c.isAmbulance, stopped: c.v < 1,
             });
           }
         }
-        for (const b of boxes[j]) cars.push({ x: p.x, y: p.y, heading: b.exit, isAmbulance: b.car.isAmbulance });
+        for (const b of boxes[j]) cars.push({ x: p.x, y: p.y, heading: b.exit, isAmbulance: b.car.isAmbulance, stopped: false });
       }
       const m = world.metrics();
       return {

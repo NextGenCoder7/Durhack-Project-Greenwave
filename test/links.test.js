@@ -52,3 +52,12 @@ test('recentMessages records sends for about 1s', () => {
   for (let i = 0; i < 11; i++) w.tick(0.1);
   assert.equal(w.recentMessages.length, 0);
 });
+
+test('snapshot.messages exposes recent neighbour messages with age', () => {
+  const w = createWorld({ seed: 1 });
+  w.send(0, 'E', { type: 'PRIORITY' });
+  for (let i = 0; i < 5; i++) w.tick(0.1);
+  assert.deepEqual(w.snapshot().messages, [{ a: 0, b: 1, type: 'PRIORITY', age: 0.5 }]);
+  w.cutLink(0, 1); w.send(0, 'E', { type: 'PLATOON' });
+  assert.equal(w.snapshot().messages.length, 1); // nothing crosses a cut link
+});

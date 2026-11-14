@@ -246,6 +246,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
         junctions: world.lights.map((lights, id) => ({ id, lights, orphaned: world.orphaned[id] })),
         cars,
         links: allLinks().map(([a, b]) => ({ a, b, up: world.linkUp(a, b) })),
+        messages: world.recentMessages.map(m => ({ a: m.a, b: m.b, type: m.type, age: r2(world.now - m.t) })),
         metrics: { ...m, avgWait: r2(m.avgWait), rollingWait: r2(m.rollingWait) },
       };
     },

@@ -205,6 +205,24 @@ Little banners pop up in the top-right corner to say what just happened: "Centra
 
 ## Part 5: What the big buttons actually do
 
+### ⚠️ First, a common mix-up: Greenwave is *not* "the boss being down"
+
+It's easy to think the Greenwave town is showing what happens when the boss computer breaks. **It isn't.** The Greenwave town **never has a boss computer at all**. It runs exactly the same whether you press "Fail central" or not.
+
+| Town | Has a boss computer? | What it represents |
+|---|---|---|
+| **Central** (left) | Yes, until you press **Fail central** (`F`) | A normal city today. Pressing `F` *is* the "boss goes down" moment, for this town only. |
+| **Fixed** (middle) | No; its boss is already broken | What a normal city looks like **after** the boss has gone down: egg timers. It's there from the start so the "broken" picture is always on screen next to the others. |
+| **Greenwave** (right) | **Never had one** | A city designed so there's nothing to go down. Each light decides for itself. |
+
+So:
+
+- **"Fail central" only changes the Central town.** Greenwave doesn't notice, because it has nothing to fail.
+- **The only thing you *can* break in Greenwave is the wires between neighbours.** You do that by cutting links (`C`, or clicking a wire) or switching messages off (`M`). The demo shows it keeps working even then.
+
+**How to say it in the pitch:**
+> "Pressing Fail central breaks the normal city. Greenwave doesn't flinch, because it has no centre to break. The only thing you *can* break in Greenwave is the wires between neighbours, so I'll cut all of those too, and it still works."
+
 ### 💥 "Fail central": breaking the boss computer
 
 | Town | What happens | What you'll see |
@@ -272,7 +290,7 @@ Before you start:
 | Step | You press | You say | They see |
 |---|---|---|---|
 | 1 | nothing (wait 20 s) | "Three copies of the same town with the same cars. Left: a boss computer. Middle: what happens when it breaks. Right: Greenwave, with no boss at all." | Cars flowing in all three towns. |
-| 2 | `F` | "The boss computer just broke." | TIMER boxes on Central; queues start growing. |
+| 2 | `F` | "The boss computer in the normal city just broke. Greenwave doesn't flinch, because it never had one." | TIMER boxes on Central; queues start growing. Greenwave carries on unchanged. |
 | 3 | `A` | "An emergency: ambulance sent across all three towns." | A flashing ambulance in each town. |
 | 4 | `O` | "Those little red dots are the lights warning each other that the ambulance is coming." | Red dots running ahead of the ambulance. |
 | 5 | click a few wires, then `C` | "Now I'm cutting the wires. All of them. The Greenwave lights can't talk to anyone." | Red ✕ everywhere. |

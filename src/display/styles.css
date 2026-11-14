@@ -144,6 +144,8 @@ body.view-grid #focus-view, body.view-focus #grid-view { display: none; }
 
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; top: 64px; right: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 10; pointer-events: none; }
+/* Focus view: the scoreboard owns the top-right, so toasts sit in the free space below it, above the dock. */
+body.view-focus #toasts { top: auto; bottom: 84px; flex-direction: column-reverse; }
 .toast {
   background: var(--panel);
   border: 1px solid var(--border);

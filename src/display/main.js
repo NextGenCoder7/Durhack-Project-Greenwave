@@ -46,7 +46,7 @@ const broadcast = fn => pending.push(fn);
 const actions = {
   failCentral() { broadcast(w => w.failCentral()); toast('Central controller failed', 'stop'); },
   spawnAmbulance() {
-    if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) return;
+    if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) { toast('Ambulance already en route', 'data'); return; }
     broadcast(w => w.spawnAmbulance());
     arrivals = [];
     toast('Ambulance dispatched', 'data');

@@ -3,13 +3,14 @@ import { createWorld } from '../world/world.js';
 import { createCentral } from '../controllers/central.js';
 import { createFixed } from '../controllers/fixed.js';
 import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
-import { canSpawnAmbulance } from './demo-rules.js';
+import { canSpawnAmbulance, linkAt } from './demo-rules.js';
 import { junctionPos, dirVec, DIRS, PHASE_OF, WORLD_SIZE } from '../world/grid.js';
 
 const PX = 420;                       // canvas size in CSS px
 const S = PX / WORLD_SIZE;            // px per metre
 const MAX_FRAME_S = 0.25;             // cap real time per frame (hidden tab, slow laptop)
 const SUB_S = 0.1;                    // world.tick limit
+const CLICK_TOL_PX = 10;              // how close to a link a click must land
 
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get('seed')) || 42;
@@ -51,12 +52,7 @@ const broadcast = fn => pending.push(fn);
 function onCanvasClick(e, canvas) {
   const r = canvas.getBoundingClientRect();
   const mx = (e.clientX - r.left) / S, my = (e.clientY - r.top) / S;
-  let best = null, bestD = 12 / S;
-  for (const l of panels[0].world.snapshot().links) {
-    const a = junctionPos(l.a), b = junctionPos(l.b);
-    const d = Math.hypot(mx - (a.x + b.x) / 2, my - (a.y + b.y) / 2);
-    if (d < bestD) { bestD = d; best = l; }
-  }
+  const best = linkAt(mx, my, panels[0].world.snapshot().links, CLICK_TOL_PX / S);
   if (!best) return;
   const { a, b, up } = best;
   broadcast(w => (up ? w.cutLink(a, b) : w.restoreLink(a, b)));

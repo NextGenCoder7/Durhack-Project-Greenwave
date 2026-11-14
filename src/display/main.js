@@ -100,6 +100,7 @@ function draw(p) {
   p.stats.textContent =
     `Ambulance     ${fmtAmb(m.ambulance)}\n` +
     `Avg car wait  ${m.avgWait.toFixed(1)} s   (last 60 s: ${m.rollingWait.toFixed(1)} s)\n` +
+    `Stops per car ${m.stopsPerCar.toFixed(2)}   (last 60 s: ${m.rollingStopsPerCar.toFixed(2)})\n` +
     `Throughput    ${m.throughputPerMin} cars/min   exited ${m.exited}\n` +
     `Conflicting greens  ${m.conflicts}`;
 

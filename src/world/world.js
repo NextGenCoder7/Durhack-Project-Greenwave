@@ -187,7 +187,9 @@ export function createWorld({ seed, schedule, rate } = {}) {
             const c = cars[i];
             const front = i === 0;
             const space = front ? (green ? Infinity : c.dist) : c.dist - cars[i - 1].dist - GAP;
-            c.v = clamp(space, 0, VMAX);
+            const v = clamp(space, 0, VMAX);
+            if (c.v >= 1 && v < 1) c.stops = (c.stops || 0) + 1;   // moving -> stopped
+            c.v = v;
             c.dist = Math.max(front ? 0 : cars[i - 1].dist + GAP, c.dist - c.v * dt);
             if (c.v < 1) c.waited += dt;
             if (front && green && c.dist <= 0.5) {
@@ -249,7 +251,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
         cars,
         links: allLinks().map(([a, b]) => ({ a, b, up: world.linkUp(a, b) })),
         messages: world.recentMessages.map(m => ({ a: m.a, b: m.b, type: m.type, age: r2(world.now - m.t) })),
-        metrics: { ...m, avgWait: r2(m.avgWait), rollingWait: r2(m.rollingWait) },
+        metrics: { ...m, avgWait: r2(m.avgWait), rollingWait: r2(m.rollingWait), stopsPerCar: r2(m.stopsPerCar), rollingStopsPerCar: r2(m.rollingStopsPerCar) },
       };
     },
   };

@@ -38,7 +38,10 @@ export function createWorld({ seed, schedule, rate } = {}) {
     now: 0,
     lights: Array(NJ).fill('ALL_RED'),
     orphaned: Array(NJ).fill(false),
+    centralFailed: false,
     conflicts: 0,
+    /** Headline failure: the central controller goes down. Only the central controller reads this. */
+    failCentral() { world.centralFailed = true; },
     _schedule: sched,
     _segments: () => segs,
 

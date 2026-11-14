@@ -94,6 +94,25 @@ It's like a relay race, where each runner hands the baton forward before the amb
 
 **If a wire is cut,** the message can't get through. But the light past the cut still has its **siren ears**: when the ambulance gets within 80 metres (about 7 seconds away), it hears the siren and turns green anyway. That's the backup plan.
 
+### How do the lights know which way the ambulance is going?
+
+**They don't. The ambulance tells them.** No light knows the route in advance, and no central computer plans it.
+
+- The ambulance carries its own planned route from its satnav, as a list of turns: "east, east, south, east, east".
+- It radios that list to the **first** light.
+- That light reads only the **first** turn ("east"), so it knows which neighbour is next.
+- It passes the message along that wire with the list one shorter: "east, south, east, east".
+- Every light does the same: read your own turn, pass the rest on.
+
+It's like a parcel with the delivery address written on it: each sorting office only reads the line meant for it. A light only ever learns "an ambulance is coming from that side, and it's going that way next". It never sees the whole route or the whole city.
+
+**What if the driver changes route?** Say a road is blocked, or the driver takes a different turn:
+- **Lights warned about the wrong road give up on their own.** If the ambulance doesn't arrive, they drop the warning 20 seconds after it was expected.
+- **Warnings only go 3 lights ahead,** so only a few lights can be wrongly warned.
+- **The light on the road the ambulance actually takes hears the siren** at 80m and turns green anyway.
+
+The cost is a few lights briefly holding green for nobody. The ambulance still gets through.
+
 ### The golden safety rule
 
 > **A light must never show green both ways at once.** That would cause crashes.
@@ -341,6 +360,9 @@ The challenge asks for systems that:
 **"What happens when a wire is cut?"**
 > The note is lost, that's all. The light was adding "cars my neighbours warned me about" to its count. Now that part is zero, so it just uses its own queue counts. There's no special emergency mode that could go wrong.
 
+**"How do the lights know the ambulance's route? In real life they wouldn't."**
+> They don't know it. The ambulance does, from its satnav, and it hands the route to the first light. Each light reads just its own turn and passes the rest on. Real emergency-vehicle systems already let ambulances signal traffic lights as they approach; we pass the request on light to light. The route comes from the vehicle, not a central computer. If the driver changes plan, the wrongly warned lights time out on their own, and the light on the real road hears the siren anyway.
+
 **"How do you stop crashes without someone checking?"**
 > A light can only hold one choice at a time, so "both green" can't happen. And it always goes all-red for 2 seconds before switching, which is longer than a car needs to cross. We also count crashes separately, and it's been zero every time.
 
@@ -367,6 +389,7 @@ The challenge asks for systems that:
 | Egg timers sometimes have fewer stops per car | "Fewer stops, but each one is much longer. Our cars wait less than half as long." |
 | In very, very heavy traffic, Greenwave's lead shrinks | "We tuned it for normal traffic. Rush-hour gridlock needs longer greens, which is just a setting." |
 | It's a simulation, not real lights | "The little brain was built to move onto real chips. It doesn't depend on the website at all." |
+| If the ambulance turns off its planned route, the warning ahead still follows the *planned* route (our lights hear the siren but can't see which exit it took) | "Wrongly warned lights time out by themselves, and the siren backup covers the real road. A real version would add exit sensors, so each light passes the warning along the road the ambulance actually took." |
 | Only one ambulance at a time | "Messages carry an ambulance name tag, so it could handle several. We kept the demo simple." |
 
 ---
@@ -390,6 +413,8 @@ Use these to sound expert. Left: what you understand. Right: what to say.
 | Lights turning green one after another for a group of cars | A **green wave** (an **emergent** behaviour) |
 | Passing the ambulance warning ahead | A **hop-by-hop priority corridor** (a PRIORITY message) |
 | The ambulance radioing the first light | **V2I**: vehicle-to-infrastructure communication |
+| Ambulances telling traffic lights they're coming | **Emergency vehicle pre-emption** |
+| The route travelling inside the message, each light reading its own turn | **Source routing**: the route is carried in the message |
 | Siren ears as a backup | **Local siren detection fallback** |
 | It gets a bit worse, not broken, when wires fail | **Graceful degradation** |
 | Never two greens; 2 seconds all-red | **Locally enforced safety invariant**; **all-red clearance interval** |

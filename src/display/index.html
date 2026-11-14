@@ -4,31 +4,61 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Greenwave</title>
-<style>
-  /* Deliberately bare: visual design is a separate step. */
-  body { font: 14px system-ui, sans-serif; margin: 12px; background: #fff; color: #111; }
-  #controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-  #panels { display: flex; flex-wrap: wrap; gap: 16px; }
-  .panel { display: flex; flex-direction: column; gap: 4px; }
-  .panel h2 { font-size: 15px; margin: 0; }
-  .stats { font: 12px ui-monospace, monospace; white-space: pre; min-height: 6.5em; }
-  canvas { border: 1px solid #ccc; cursor: crosshair; }
-</style>
+<link rel="stylesheet" href="./styles.css">
 </head>
-<body>
-<div id="controls">
-  <button id="amb">Spawn ambulance</button>
-  <button id="fail">Fail central</button>
-  <button id="cutall">Cut all links</button>
-  <button id="restore">Restore all links</button>
-  <button id="reset">Reset</button>
-  <label>Speed <select id="speed"><option>1</option><option selected>3</option><option>5</option></select>×</label>
-  <label><input type="checkbox" id="msgs"> Show messages</label>
-  <label><input type="checkbox" id="gwmsgs" checked> Greenwave messages on</label>
-  <span id="clock"></span>
-</div>
-<div id="panels"></div>
-<p>Click a link (road between two junctions) to cut or restore it in all three panels.</p>
+<body class="view-grid">
+<header>
+  <div class="wordmark">Green<span>wave</span></div>
+  <div class="clock" id="clock">t = 0.0 s</div>
+  <div class="clock" id="speed-label">3×</div>
+  <div class="spacer"></div>
+  <div class="pill" id="pill-central">CENTRAL: ONLINE</div>
+  <div class="pill" id="pill-links">LINKS CUT: 0/24</div>
+  <div class="pill" id="pill-messages">GREENWAVE MESSAGES: ON</div>
+  <button id="view-toggle" data-action="toggleView">Focus view<kbd>V</kbd></button>
+</header>
+
+<main id="views">
+  <section id="grid-view">
+    <div class="map-panel" data-panel="0"><h2>Central</h2><div class="map-box"><canvas></canvas></div><div class="stat-strip"></div></div>
+    <div class="map-panel" data-panel="1"><h2>Fixed (central failed)</h2><div class="map-box"><canvas></canvas></div><div class="stat-strip"></div></div>
+    <div class="map-panel greenwave" data-panel="2"><h2>Greenwave</h2><div class="map-box"><canvas></canvas></div><div class="stat-strip"></div></div>
+  </section>
+  <section id="focus-view">
+    <div class="focus-left">
+      <div class="focus-tabs">
+        <button data-focus="0">Central<kbd>1</kbd></button>
+        <button data-focus="1">Fixed<kbd>2</kbd></button>
+        <button data-focus="2" class="active">Greenwave<kbd>3</kbd></button>
+      </div>
+      <div class="map-box"><canvas id="focus-canvas"></canvas></div>
+    </div>
+    <table id="scoreboard"></table>
+  </section>
+</main>
+
+<footer id="dock">
+  <div class="group"><span class="title">Incidents</span>
+    <button data-action="failCentral">Fail central<kbd>F</kbd></button>
+    <button data-action="spawnAmbulance">Spawn ambulance<kbd>A</kbd></button>
+  </div>
+  <div class="group"><span class="title">Network</span>
+    <button data-action="cutAll">Cut all links<kbd>C</kbd></button>
+    <button data-action="restoreAll">Restore all<kbd>R</kbd></button>
+    <span class="hint">or click any link to cut / restore it</span>
+  </div>
+  <div class="group"><span class="title">Greenwave</span>
+    <button data-action="toggleMessages" id="btn-messages" class="on">Messages: ON<kbd>M</kbd></button>
+    <button data-action="toggleShowMessages" id="btn-show">Show messages<kbd>O</kbd></button>
+  </div>
+  <div class="group"><span class="title">Sim</span>
+    <button data-action="speedDown">Slower<kbd>[</kbd></button>
+    <button data-action="speedUp">Faster<kbd>]</kbd></button>
+    <button data-action="reset">Reset<kbd>Shift+R</kbd></button>
+  </div>
+</footer>
+
+<div id="toasts" aria-live="polite"></div>
 <script type="module" src="./main.js"></script>
 </body>
 </html>

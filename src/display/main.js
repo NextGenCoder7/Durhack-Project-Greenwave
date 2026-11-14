@@ -6,76 +6,98 @@ import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
 import { canSpawnAmbulance, linkAt } from './demo-rules.js';
 import { junctionPos, dirVec, DIRS, PHASE_OF, WORLD_SIZE } from '../world/grid.js';
 
-const PX = 420;                       // canvas size in CSS px
-const S = PX / WORLD_SIZE;            // px per metre
-const MAX_FRAME_S = 0.25;             // cap real time per frame (hidden tab, slow laptop)
+const MAX_FRAME_S = 0.25;             // cap real time per sim step (hidden tab, slow laptop)
 const SUB_S = 0.1;                    // world.tick limit
 const CLICK_TOL_PX = 10;              // how close to a link a click must land
+const SPEEDS = [1, 3, 5];
+const PANEL_DEFS = [
+  { key: 'central', label: 'Central', make: () => createCentral() },
+  { key: 'fixed', label: 'Fixed (central failed)', make: () => createFixed() },
+  { key: 'greenwave', label: 'Greenwave', make: speed => createGreenwaveWorkers({ speed }) },
+];
 
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get('seed')) || 42;
-let speed = 3;
+const $ = id => document.getElementById(id);
+
+const ui = { view: 'grid', focus: 2, showMessages: false, messagesOn: true, speed: 3 };
 let panels = [];
 let pending = [];                     // commands applied to all worlds at the same sim time
 let last = performance.now();
 
-const $ = id => document.getElementById(id);
-
 function build() {
   for (const p of panels) p.ctrl.terminate?.();
-  $('panels').innerHTML = '';
-  const defs = [
-    { label: 'Central', ctrl: createCentral() },
-    { label: 'Fixed (central failed)', ctrl: createFixed() },
-    { label: 'Greenwave', ctrl: createGreenwaveWorkers({ speed }) },
-  ];
-  panels = defs.map(d => {
-    const el = document.createElement('div'); el.className = 'panel';
-    const h = document.createElement('h2'); h.textContent = d.label;
-    const stats = document.createElement('div'); stats.className = 'stats';
-    const canvas = document.createElement('canvas');
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = PX * dpr; canvas.height = PX * dpr;
-    canvas.style.width = canvas.style.height = `${PX}px`;
-    const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
-    canvas.addEventListener('click', e => onCanvasClick(e, canvas));
-    el.append(h, stats, canvas); $('panels').append(el);
-    return { ...d, world: createWorld({ seed }), stats, ctx };
-  });
+  panels = PANEL_DEFS.map(d => ({ key: d.key, label: d.label, ctrl: d.make(ui.speed), world: createWorld({ seed }) }));
   pending = [];
   last = performance.now();
-  $('gwmsgs').checked = true;   // new worlds start with messaging on
+  ui.messagesOn = true;
 }
 
+/** Queue a command; it runs on every panel's world at the start of the next sim step. */
 const broadcast = fn => pending.push(fn);
 
-function onCanvasClick(e, canvas) {
-  const r = canvas.getBoundingClientRect();
-  const mx = (e.clientX - r.left) / S, my = (e.clientY - r.top) / S;
-  const best = linkAt(mx, my, panels[0].world.snapshot().links, CLICK_TOL_PX / S);
-  if (!best) return;
-  const { a, b, up } = best;
+// ---------------- Actions (shared by dock buttons and keyboard) ----------------
+const actions = {
+  failCentral() { broadcast(w => w.failCentral()); },
+  spawnAmbulance() { if (canSpawnAmbulance(panels.map(p => p.world))) broadcast(w => w.spawnAmbulance()); },
+  cutAll() { broadcast(w => w.cutAll()); },
+  restoreAll() { broadcast(w => w.restoreAll()); },
+  toggleMessages() {
+    ui.messagesOn = !ui.messagesOn;
+    const on = ui.messagesOn;
+    broadcast((w, p) => { if (p.key === 'greenwave') w.setMessaging(on); });
+  },
+  toggleShowMessages() { ui.showMessages = !ui.showMessages; },
+  toggleView() { setView(ui.view === 'grid' ? 'focus' : 'grid'); },
+  setFocus(i) { ui.focus = i; setView('focus'); },
+  speedDown() { setSpeed(SPEEDS[Math.max(0, SPEEDS.indexOf(ui.speed) - 1)]); },
+  speedUp() { setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(ui.speed) + 1)]); },
+  reset() { build(); },
+};
+
+function setSpeed(s) {
+  ui.speed = s;
+  for (const p of panels) p.ctrl.setSpeed?.(s);
+}
+
+function setView(v) {
+  ui.view = v;
+  document.body.classList.toggle('view-grid', v === 'grid');
+  document.body.classList.toggle('view-focus', v === 'focus');
+  for (const b of document.querySelectorAll('.focus-tabs button')) b.classList.toggle('active', Number(b.dataset.focus) === ui.focus);
+}
+
+function cutOrRestore(link) {
+  const { a, b, up } = link;
   broadcast(w => (up ? w.cutLink(a, b) : w.restoreLink(a, b)));
 }
 
-$('amb').onclick = () => {
-  if (canSpawnAmbulance(panels.map(p => p.world))) broadcast(w => w.spawnAmbulance());
-};
-$('fail').onclick = () => broadcast(w => w.failCentral());
-$('cutall').onclick = () => broadcast(w => w.cutAll());
-$('restore').onclick = () => broadcast(w => w.restoreAll());
-$('reset').onclick = () => build();
-// Greenwave-only: switch neighbour cooperation off/on without touching links or the other panels.
-$('gwmsgs').onchange = e => {
-  const on = e.target.checked;
-  pending.push((w, p) => { if (p.ctrl.name === 'greenwave') w.setMessaging(on); });
-};
-$('speed').onchange = e => { speed = Number(e.target.value); for (const p of panels) p.ctrl.setSpeed?.(speed); };
+// Dock and header buttons.
+for (const b of document.querySelectorAll('[data-action]')) {
+  b.addEventListener('click', () => { actions[b.dataset.action](); b.blur(); });
+}
+for (const b of document.querySelectorAll('[data-focus]')) {
+  b.addEventListener('click', () => { actions.setFocus(Number(b.dataset.focus)); b.blur(); });
+}
 
-// Simulation runs on a timer (not tied to frame rate); drawing runs on animation frames.
+// Keyboard shortcuts. Ignored while typing in a form field or with Ctrl/Alt/Meta held.
+const KEYS = {
+  f: 'failCentral', a: 'spawnAmbulance', c: 'cutAll', r: 'restoreAll',
+  m: 'toggleMessages', o: 'toggleShowMessages', v: 'toggleView', '[': 'speedDown', ']': 'speedUp',
+};
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+  if (document.activeElement?.matches('input, select, textarea')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r' && e.shiftKey) { actions.reset(); e.preventDefault(); return; }
+  if (['1', '2', '3'].includes(e.key)) { actions.setFocus(Number(e.key) - 1); e.preventDefault(); return; }
+  if (KEYS[k] && !e.shiftKey) { actions[KEYS[k]](); e.preventDefault(); }
+});
+
+// ---------------- Simulation loop (timer-driven, independent of frame rate) ----------------
 function simStep() {
   const now = performance.now();
-  let sim = Math.min((now - last) / 1000, MAX_FRAME_S) * speed;
+  let sim = Math.min((now - last) / 1000, MAX_FRAME_S) * ui.speed;
   last = now;
   for (const fn of pending) for (const p of panels) fn(p.world, p);
   pending = [];
@@ -86,78 +108,89 @@ function simStep() {
   }
 }
 
-function frame() {
-  for (const p of panels) draw(p);
+// ---------------- Header ----------------
+function setPill(el, text, cls) {
+  if (el.textContent !== text) el.textContent = text;
+  el.className = `pill ${cls}`;
+}
+
+function updateHeader(snaps) {
   $('clock').textContent = `t = ${panels[0].world.now.toFixed(1)} s`;
-  requestAnimationFrame(frame);
+  $('speed-label').textContent = `${ui.speed}×`;
+  const failed = panels[0].world.centralFailed;
+  setPill($('pill-central'), failed ? 'CENTRAL: FAILED' : 'CENTRAL: ONLINE', failed ? 'bad' : '');
+  const cut = snaps[0].links.filter(l => !l.up).length;
+  setPill($('pill-links'), `LINKS CUT: ${cut}/24`, cut ? 'warn' : '');
+  const on = panels[2].world.messaging;
+  setPill($('pill-messages'), `GREENWAVE MESSAGES: ${on ? 'ON' : 'OFF'}`, on ? '' : 'bad');
+  const btn = $('btn-messages');
+  btn.firstChild.textContent = `Messages: ${on ? 'ON' : 'OFF'}`;
+  btn.className = on ? 'on' : 'off';
+  $('btn-show').className = ui.showMessages ? 'on' : '';
+  $('view-toggle').firstChild.textContent = ui.view === 'grid' ? 'Focus view' : 'Grid view';
 }
 
-function fmtAmb(a) {
-  if (a.state === 'none') return '—';
-  return `${a.journey.toFixed(1)} s (stopped ${a.stopped.toFixed(1)} s)${a.state === 'arrived' ? ' ✓ arrived' : ' …'}`;
+// ---------------- Temporary drawing (replaced by map-renderer.js in Task 3) ----------------
+const gridCanvases = [...document.querySelectorAll('#grid-view canvas')];
+
+function fitCanvas(canvas) {
+  const size = Math.floor(Math.min(canvas.parentElement.clientWidth, canvas.parentElement.clientHeight));
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(size * dpr)) {
+    canvas.width = canvas.height = Math.round(size * dpr);
+    canvas.style.width = canvas.style.height = `${size}px`;
+  }
+  return { size, dpr };
 }
 
-function draw(p) {
-  const s = p.world.snapshot(), ctx = p.ctx, m = s.metrics;
-  p.stats.textContent =
-    (s.messaging ? '' : 'MESSAGES OFF: junctions use only their own sensors\n') +
-    `Ambulance     ${fmtAmb(m.ambulance)}\n` +
-    `Avg car wait  ${m.avgWait.toFixed(1)} s   (last 60 s: ${m.rollingWait.toFixed(1)} s)\n` +
-    `Stops per car ${m.stopsPerCar.toFixed(2)}   (last 60 s: ${m.rollingStopsPerCar.toFixed(2)})\n` +
-    `Throughput    ${m.throughputPerMin} cars/min   exited ${m.exited}\n` +
-    `Conflicting greens  ${m.conflicts}`;
-
-  ctx.clearRect(0, 0, PX, PX);
-  ctx.save(); ctx.scale(S, S);
-
-  // Roads (full rows/columns including stubs).
-  ctx.strokeStyle = '#ddd'; ctx.lineWidth = 14;
+function drawTemp(canvas, s) {
+  const { size, dpr } = fitCanvas(canvas);
+  const ctx = canvas.getContext('2d');
+  const S = (size / WORLD_SIZE) * dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  ctx.strokeStyle = '#1c2a44'; ctx.lineWidth = 14;
   for (let i = 0; i < 4; i++) {
-    const { x, y } = junctionPos(i * 5);   // diagonal junctions give each row/column coordinate
+    const { x, y } = junctionPos(i * 5);
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD_SIZE, y); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_SIZE); ctx.stroke();
   }
-
-  // Links between junctions.
   for (const l of s.links) {
     const a = junctionPos(l.a), b = junctionPos(l.b);
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-    if (l.up && !s.messaging) { ctx.setLineDash([2, 4]); ctx.strokeStyle = '#bbb'; ctx.lineWidth = 2; }
-    else if (l.up) { ctx.setLineDash([]); ctx.strokeStyle = '#999'; ctx.lineWidth = 1; }
-    else { ctx.setLineDash([6, 5]); ctx.strokeStyle = '#d00'; ctx.lineWidth = 4; }
-    ctx.stroke();
+    ctx.strokeStyle = l.up ? '#38bdf8' : '#ff5470'; ctx.lineWidth = l.up ? 1 : 3;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
-  ctx.setLineDash([]);
-
-  // Message overlay (Task 9).
-  if ($('msgs').checked && s.messages) {
-    for (const msg of s.messages) {
-      const a = junctionPos(msg.a), b = junctionPos(msg.b), f = Math.min(1, msg.age);
-      const x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f;
-      ctx.fillStyle = msg.type === 'PRIORITY' ? '#e00' : '#06f';
-      ctx.beginPath(); ctx.arc(x, y, msg.type === 'PRIORITY' ? 5 : 3, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  // Junctions: stop-line ticks per approach, orphaned outline.
   for (const j of s.junctions) {
     const c = junctionPos(j.id);
     for (const d of DIRS) {
-      const v = dirVec(d), px = -v.y, py = v.x;
-      const cx = c.x + v.x * 10, cy = c.y + v.y * 10;
-      ctx.strokeStyle = j.lights === PHASE_OF[d] ? '#0a0' : '#d00'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(cx - px * 6, cy - py * 6); ctx.lineTo(cx + px * 6, cy + py * 6); ctx.stroke();
+      const v = dirVec(d);
+      ctx.fillStyle = j.lights === PHASE_OF[d] ? '#3dffa8' : '#ff5470';
+      ctx.fillRect(c.x + v.x * 10 - 3, c.y + v.y * 10 - 3, 6, 6);
     }
-    if (j.orphaned) { ctx.strokeStyle = '#f80'; ctx.lineWidth = 2; ctx.strokeRect(c.x - 14, c.y - 14, 28, 28); }
   }
-
-  // Cars.
   for (const car of s.cars) {
-    ctx.fillStyle = car.isAmbulance ? '#e00' : '#333';
+    ctx.fillStyle = car.isAmbulance ? '#ff3355' : car.stopped ? '#ffb547' : '#9fb3d1';
     ctx.beginPath(); ctx.arc(car.x, car.y, car.isAmbulance ? 7 : 3, 0, Math.PI * 2); ctx.fill();
   }
-  ctx.restore();
+}
+
+gridCanvases.forEach((canvas, i) => {
+  canvas.addEventListener('click', e => {
+    const r = canvas.getBoundingClientRect();
+    const S = r.width / WORLD_SIZE;
+    const link = linkAt((e.clientX - r.left) / S, (e.clientY - r.top) / S, panels[i].world.snapshot().links, CLICK_TOL_PX / S);
+    if (link) cutOrRestore(link);
+  });
+});
+
+function frame() {
+  const snaps = panels.map(p => p.world.snapshot());
+  if (ui.view === 'grid') snaps.forEach((s, i) => drawTemp(gridCanvases[i], s));
+  updateHeader(snaps);
+  requestAnimationFrame(frame);
 }
 
 build();
+setView('grid');
 setInterval(simStep, 16);
 requestAnimationFrame(frame);

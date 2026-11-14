@@ -28,3 +28,9 @@ test('linkAt: clicks too far from any link, or on a junction itself, select noth
 });
 
 function pick(x, y) { const l = linkAt(x, y, LINKS, 14); return l && [l.a, l.b]; }
+
+import { bestIndex } from '../src/display/demo-rules.js';
+test('bestIndex: lowest value wins', () => assert.equal(bestIndex([57.1, 106, 58.7]), 0));
+test('bestIndex: ties go to the first index', () => assert.equal(bestIndex([2, 1.5, 1.5]), 1));
+test('bestIndex: nulls are ignored', () => assert.equal(bestIndex([null, 3, 2]), 2));
+test('bestIndex: all null gives null', () => assert.equal(bestIndex([null, null, null]), null));

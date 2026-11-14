@@ -20,6 +20,13 @@ export function linkAt(x, y, links, tol) {
   return best;
 }
 
+/** Index of the lowest non-null value (ties: first), or null when there is no data. */
+export function bestIndex(values) {
+  let best = null;
+  values.forEach((v, i) => { if (v !== null && (best === null || v < values[best])) best = i; });
+  return best;
+}
+
 /** All panels must run the same ambulance: only spawn when no panel has one driving. */
 export function canSpawnAmbulance(worlds) {
   return worlds.every(w => w.metrics().ambulance.state !== 'driving');

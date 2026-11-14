@@ -5,6 +5,7 @@ import { createFixed } from '../controllers/fixed.js';
 import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
 import { canSpawnAmbulance, linkAt } from './demo-rules.js';
 import { createMapRenderer } from './map-renderer.js';
+import { renderScoreboard, renderStatStrips } from './scoreboard.js';
 
 const MAX_FRAME_S = 0.25;             // cap real time per sim step (hidden tab, slow laptop)
 const SUB_S = 0.1;                    // world.tick limit
@@ -136,7 +137,10 @@ let reducedMotion = reducedMotionQuery.matches;
 reducedMotionQuery.addEventListener('change', e => { reducedMotion = e.matches; });
 
 const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas, i) => ({ canvas, renderer: createMapRenderer(canvas), panelIndex: () => i }));
-const allMaps = gridMaps;
+const focusCanvas = document.getElementById('focus-canvas');
+const focusMap = { canvas: focusCanvas, renderer: createMapRenderer(focusCanvas), panelIndex: () => ui.focus };
+const allMaps = [...gridMaps, focusMap];
+const strips = [...document.querySelectorAll('#grid-view .stat-strip')];
 let lastSnaps = [];
 let hover = null;                    // { canvas, link } for the link under the cursor
 
@@ -169,7 +173,13 @@ function drawMap(map, time) {
 
 function frame(time) {
   lastSnaps = panels.map(p => p.world.snapshot());   // one snapshot per world per frame
-  if (ui.view === 'grid') for (const m of gridMaps) drawMap(m, time);
+  if (ui.view === 'grid') {
+    for (const m of gridMaps) drawMap(m, time);
+    renderStatStrips(strips, lastSnaps);
+  } else {
+    drawMap(focusMap, time);
+    renderScoreboard(document.getElementById('scoreboard'), lastSnaps, ['Central', 'Fixed', 'Greenwave']);
+  }
   updateHeader(lastSnaps);
   requestAnimationFrame(frame);
 }

@@ -76,3 +76,67 @@ test('does not mutate input state', () => {
   step(s, S({ queues: { ...Z, N: 5 }, inbox: [{ type: 'PLATOON', approach: 'W', count: 2, etaSec: 1 }] }));
   assert.deepEqual(s, copy);
 });
+
+// ---- Task 5: priority corridor and siren fallback ----
+const P = (o = {}) => ({ type: 'PRIORITY', id: 'amb', seq: 0, approach: 'W', route: ['E', 'S'], etaSec: 5, hopsLeft: 3, ...o });
+const nsGreenAt2 = () => drive(init(), 0, 2, () => ({ queues: { ...Z, N: 5 } })).st;
+
+test('PRIORITY pre-empts below min green: ALL_RED then EW within 2.25s', () => {
+  let st = drive(nsGreenAt2(), 2.25, 2.75, () => ({ queues: { ...Z, N: 5 } })).st;
+  let out = step(st, S({ now: 3, queues: { ...Z, N: 5 }, inbox: [P()] }));
+  assert.equal(out.lights, 'ALL_RED');
+  const { log } = drive(out.state, 3.25, 5.25, () => ({ queues: { ...Z, N: 5 } }));
+  assert.equal(at(log, 5.25), 'EW');
+});
+
+test('PRIORITY forwards one hop with eta +10, route popped, hopsLeft-1; duplicates ignored', () => {
+  const out = step(init(), S({ inbox: [P()] }));
+  const fw = out.outbox.filter(o => o.msg.type === 'PRIORITY');
+  assert.deepEqual(fw, [{ to: 'E', msg: P({ approach: 'W', route: ['S'], etaSec: 15, hopsLeft: 2 }) }]);
+  const again = step(out.state, S({ now: 0.25, inbox: [P()] }));
+  assert.equal(again.outbox.filter(o => o.msg.type === 'PRIORITY').length, 0);
+});
+
+test('PRIORITY with hopsLeft 0 is not forwarded; stale (eta < -3) is dropped', () => {
+  assert.equal(step(init(), S({ inbox: [P({ hopsLeft: 0 })] })).outbox.length, 0);
+  assert.equal(step(init(), S({ inbox: [P({ etaSec: -4 })] })).state.priority, null);
+});
+
+test('siren alone triggers priority: EW green -> NS within 2.25s', () => {
+  let st = drive(nsGreenAt2(), 2.25, 10.75, () => ({ queues: { N: 0, S: 0, E: 10, W: 10 } })).st;
+  assert.equal(st.sig.phase, 'EW');
+  const { log } = drive(st, 11, 13.25, () => ({ queues: { N: 0, S: 0, E: 10, W: 10 }, sirenNear: 'N' }));
+  assert.equal(at(log, 11), 'ALL_RED');
+  assert.equal(at(log, 13.25), 'NS');
+});
+
+test('siren N -> null clears priority and sends a refresh with seq+1 to route[0]', () => {
+  let st = step(init(), S({ inbox: [P({ approach: 'N', route: ['S', 'E'], seq: 4, etaSec: 2 })] })).state;
+  st = drive(st, 0.25, 4, () => ({ sirenNear: 'N' })).st;
+  const out = step(st, S({ now: 4.25 }));
+  assert.equal(out.state.priority, null);
+  assert.deepEqual(out.outbox.filter(o => o.msg.type === 'PRIORITY'),
+    [{ to: 'S', msg: { type: 'PRIORITY', id: 'amb', seq: 5, approach: 'N', route: ['E'], etaSec: 10, hopsLeft: 3 } }]);
+});
+
+test('older message for an ambulance that already passed is ignored', () => {
+  let st = step(init(), S({ inbox: [P({ approach: 'N', seq: 4, etaSec: 2 })] })).state;
+  st = drive(st, 0.25, 1, () => ({ sirenNear: 'N' })).st;
+  st = step(st, S({ now: 1.25 })).state;
+  st = step(st, S({ now: 1.5, inbox: [P({ approach: 'N', seq: 3, etaSec: 1 })] })).state;
+  assert.equal(st.priority, null);
+});
+
+test('priority without siren times out at arriveAt + 20s', () => {
+  let st = step(init(), S({ inbox: [P({ etaSec: 5 })] })).state;
+  st = drive(st, 0.25, 25, () => ({})).st;
+  assert.notEqual(st.priority, null);
+  st = step(st, S({ now: 25.25 })).state;
+  assert.equal(st.priority, null);
+});
+
+test('priority with eta 40 is not active yet', () => {
+  let st = drive(nsGreenAt2(), 2.25, 8.75, () => ({ queues: { ...Z, N: 5 } })).st;
+  const out = step(st, S({ now: 9, queues: { ...Z, N: 5 }, inbox: [P({ etaSec: 40 })] }));
+  assert.equal(out.lights, 'NS');
+});

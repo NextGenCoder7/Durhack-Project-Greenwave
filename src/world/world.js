@@ -1,6 +1,6 @@
 // Headless, seeded world: physics, sensors, lights, links and metrics. It never decides lights.
 import { N, DIRS, SPACING, STUB, PHASE_OF, opposite, left, neighbour, junctionPos, dirVec, allLinks, linkKey } from './grid.js';
-import { buildSchedule, entryJunction } from './schedule.js';
+import { buildSchedule, entryJunction, AMBULANCE } from './schedule.js';
 import { createMetrics } from './metrics.js';
 
 export const VMAX = 12;          // m/s
@@ -9,6 +9,8 @@ export const BOX_S = 1.5;        // s to cross a junction
 export const QUEUE_RANGE = 60;   // m
 export const MAX_DT = 0.1;       // s
 export const LINK_LATENCY_S = 0.05;
+export const SIREN_RANGE = 80;   // m
+export const V2I_RANGE = 200;    // m
 const LIGHTS = ['NS', 'EW', 'ALL_RED'];
 const NJ = N * N;
 
@@ -28,6 +30,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
   const linkState = new Map(allLinks().map(([a, b]) => [linkKey(a, b), true]));
   const inboxes = Array.from({ length: NJ }, () => []); // { deliverAt, msg, link: key | null }
   let next = 0;
+  let amb = null; // { car, state: 'driving' | 'arrived', spawnT, journey, stopped, messaged: [hop] }
 
   const hasRoom = s => s.length === 0 || s[s.length - 1].dist <= SPACING - GAP;
 
@@ -51,7 +54,33 @@ export function createWorld({ seed, schedule, rate } = {}) {
       for (const d of DIRS) queues[d] = seg(j, d).filter(c => c.dist <= QUEUE_RANGE && c.v < 1).length;
       const dep = { ...departures[j] };
       departures[j] = { N: 0, E: 0, S: 0, W: 0 };
-      return { now: world.now, queues, departures: dep, sirenNear: null };
+      let sirenNear = null;
+      if (amb && amb.state === 'driving' && !amb.car.inBox && amb.car.j === j && amb.car.dist <= SIREN_RANGE) sirenNear = amb.car.d;
+      return { now: world.now, queues, departures: dep, sirenNear };
+    },
+
+    /** Spawn the ambulance at the current time. Ignored while one is already driving. */
+    spawnAmbulance() {
+      if (amb && amb.state === 'driving') return;
+      const j = entryJunction(AMBULANCE.entry), d = AMBULANCE.entry.side;
+      const target = seg(j, d);
+      const last = target[target.length - 1];
+      const car = { id: 'amb', isAmbulance: true, route: AMBULANCE.route, hop: 0, j, d, dist: last ? Math.max(STUB, last.dist + GAP) : STUB, v: VMAX, waited: 0, spawnT: world.now, inBox: false };
+      target.push(car);
+      amb = { car, state: 'driving', spawnT: world.now, journey: 0, stopped: 0, messaged: [] };
+    },
+
+    /** Ground truth about the ambulance, for the central controller only. */
+    ambulanceInfo() {
+      if (!amb || amb.state !== 'driving') return null;
+      const c = amb.car, out = [];
+      let j = c.j, approach = c.d, dist = c.inBox ? 0 : c.dist;
+      for (let h = c.hop; h < c.route.length && j !== null; h++) {
+        if (!(c.inBox && h === c.hop)) out.push({ j, approach, eta: dist / VMAX });
+        const exit = c.route[h];
+        j = neighbour(j, exit); approach = opposite(exit); dist += SPACING;
+      }
+      return { junctions: out };
     },
 
     // --- Link layer ("the wire"). Junctions exchange messages only through here. ---
@@ -109,7 +138,18 @@ export function createWorld({ seed, schedule, rate } = {}) {
         const target = seg(entryJunction(s.entry), s.entry.side);
         if (!hasRoom(target)) continue;
         q.shift();
-        target.push({ id: s.id, isAmbulance: false, route: s.route, hop: 0, dist: STUB, v: VMAX, waited: now - s.t, spawnT: s.t });
+        const j = entryJunction(s.entry);
+        target.push({ id: s.id, isAmbulance: false, route: s.route, hop: 0, j, d: s.entry.side, dist: STUB, v: VMAX, waited: now - s.t, spawnT: s.t });
+      }
+
+      // 1b. Ambulance short-range radio (V2I) to its FIRST junction only, bypassing links.
+      // Later junctions learn via hop-by-hop PRIORITY, or their own siren detector if cut off.
+      if (amb && amb.state === 'driving') {
+        const c = amb.car;
+        if (c.hop === 0 && !c.inBox && c.dist <= V2I_RANGE && !amb.messaged.includes(c.hop)) {
+          amb.messaged.push(c.hop);
+          world.deliverDirect(c.j, { type: 'PRIORITY', id: 'amb', seq: 2 * c.hop, approach: c.d, route: c.route.slice(c.hop + 1), etaSec: c.dist / VMAX, hopsLeft: 3 });
+        }
       }
 
       // 2. Junction boxes: advance crossings, release cars onto the next segment or out of the world.
@@ -122,9 +162,14 @@ export function createWorld({ seed, schedule, rate } = {}) {
           box.splice(i--, 1);
           departures[j][b.exit]++;
           const nj = neighbour(j, b.exit);
-          if (nj === null) { metrics.onExit(b.car, now); continue; }
-          b.car.hop++; b.car.dist = SPACING; b.car.v = VMAX;
-          seg(nj, opposite(b.exit)).push(b.car);
+          b.car.inBox = false;
+          if (nj === null) {
+            if (b.car.isAmbulance) { amb.state = 'arrived'; amb.journey = now - amb.spawnT; amb.stopped = b.car.waited; }
+            else metrics.onExit(b.car, now);
+            continue;
+          }
+          b.car.hop++; b.car.dist = SPACING; b.car.v = VMAX; b.car.j = nj; b.car.d = opposite(b.exit);
+          seg(nj, b.car.d).push(b.car);
         }
       }
 
@@ -147,7 +192,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
               // Enter only if the outgoing segment has room (no car already crossing towards it).
               if (dest && (!hasRoom(dest) || boxes[j].some(b => b.exit === exit))) continue;
               cars.shift(); i--;
-              c.v = VMAX;
+              c.v = VMAX; c.inBox = true;
               boxes[j].push({ car: c, axis: PHASE_OF[d], exit, t: BOX_S });
             }
           }
@@ -170,7 +215,10 @@ export function createWorld({ seed, schedule, rate } = {}) {
     },
 
     metrics() {
-      return metrics.read(world.now, world.conflicts, { state: 'none', journey: 0, stopped: 0 });
+      let a = { state: 'none', journey: 0, stopped: 0 };
+      if (amb && amb.state === 'driving') a = { state: 'driving', journey: world.now - amb.spawnT, stopped: amb.car.waited };
+      else if (amb) a = { state: 'arrived', journey: amb.journey, stopped: amb.stopped };
+      return metrics.read(world.now, world.conflicts, a);
     },
 
     snapshot() {

@@ -3,6 +3,7 @@ import { createWorld } from '../world/world.js';
 import { createCentral } from '../controllers/central.js';
 import { createFixed } from '../controllers/fixed.js';
 import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
+import { canSpawnAmbulance } from './demo-rules.js';
 import { junctionPos, dirVec, DIRS, PHASE_OF, WORLD_SIZE } from '../world/grid.js';
 
 const PX = 420;                       // canvas size in CSS px
@@ -60,7 +61,9 @@ function onCanvasClick(e, canvas) {
   broadcast(w => (up ? w.cutLink(a, b) : w.restoreLink(a, b)));
 }
 
-$('amb').onclick = () => broadcast(w => w.spawnAmbulance());
+$('amb').onclick = () => {
+  if (canSpawnAmbulance(panels.map(p => p.world))) broadcast(w => w.spawnAmbulance());
+};
 $('fail').onclick = () => broadcast(w => w.failCentral());
 $('cutall').onclick = () => broadcast(w => w.cutAll());
 $('restore').onclick = () => broadcast(w => w.restoreAll());

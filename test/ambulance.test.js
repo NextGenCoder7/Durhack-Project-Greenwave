@@ -58,7 +58,7 @@ test('V2I reaches the first junction even with all links cut', () => {
   const inbox = w.takeInbox(4);
   assert.equal(inbox.length, 1);
   assert.deepEqual({ ...inbox[0], etaSec: Math.round(inbox[0].etaSec) },
-    { type: 'PRIORITY', id: 'amb', seq: 0, approach: 'W', route: ['E', 'S', 'E', 'E'], etaSec: 10, hopsLeft: 3 });
+    { type: 'PRIORITY', id: 'amb-1', seq: 0, approach: 'W', route: ['E', 'S', 'E', 'E'], etaSec: 10, hopsLeft: 3 });
 });
 
 test('zero conflicts with ambulance and all links cut', () => {
@@ -74,3 +74,17 @@ test('V2I goes only to the first junction; later junctions rely on links or sire
   assert.equal(got.reduce((s, x) => s + x, 0), 1);
 });
 
+
+test('a second ambulance also gets a PRIORITY corridor', () => {
+  const w = createWorld({ seed: 42 }), c = createGreenwaveLockstep();
+  const priorities = () => w.recentMessages.filter(m => m.type === 'PRIORITY').length;
+  let first = 0, second = 0;
+  runHeadless(w, c, 30); w.spawnAmbulance();
+  runHeadless(w, c, 150, { onStep: () => { first += priorities(); } });
+  assert.equal(w.metrics().ambulance.state, 'arrived');
+  w.spawnAmbulance();
+  runHeadless(w, c, 270, { onStep: () => { second += priorities(); } });
+  assert.equal(w.metrics().ambulance.state, 'arrived');
+  assert.ok(first > 0, 'first ambulance has a corridor');
+  assert.ok(second > 0, 'second ambulance has a corridor');
+});

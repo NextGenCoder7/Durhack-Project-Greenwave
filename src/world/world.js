@@ -30,6 +30,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
   const linkState = new Map(allLinks().map(([a, b]) => [linkKey(a, b), true]));
   const inboxes = Array.from({ length: NJ }, () => []); // { deliverAt, msg, link: key | null }
   let next = 0;
+  let ambCount = 0;
   let amb = null; // { car, state: 'driving' | 'arrived', spawnT, journey, stopped, messaged: [hop] }
 
   const hasRoom = s => s.length === 0 || s[s.length - 1].dist <= SPACING - GAP;
@@ -68,7 +69,8 @@ export function createWorld({ seed, schedule, rate } = {}) {
       const j = entryJunction(AMBULANCE.entry), d = AMBULANCE.entry.side;
       const target = seg(j, d);
       const last = target[target.length - 1];
-      const car = { id: 'amb', isAmbulance: true, route: AMBULANCE.route, hop: 0, j, d, dist: last ? Math.max(STUB, last.dist + GAP) : STUB, v: VMAX, waited: 0, spawnT: world.now, inBox: false };
+      const id = `amb-${++ambCount}`;
+      const car = { id, isAmbulance: true, route: AMBULANCE.route, hop: 0, j, d, dist: last ? Math.max(STUB, last.dist + GAP) : STUB, v: VMAX, waited: 0, spawnT: world.now, inBox: false };
       target.push(car);
       amb = { car, state: 'driving', spawnT: world.now, journey: 0, stopped: 0, messaged: [] };
     },
@@ -151,7 +153,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
         const c = amb.car;
         if (c.hop === 0 && !c.inBox && c.dist <= V2I_RANGE && !amb.messaged.includes(c.hop)) {
           amb.messaged.push(c.hop);
-          world.deliverDirect(c.j, { type: 'PRIORITY', id: 'amb', seq: 2 * c.hop, approach: c.d, route: c.route.slice(c.hop + 1), etaSec: c.dist / VMAX, hopsLeft: 3 });
+          world.deliverDirect(c.j, { type: 'PRIORITY', id: c.id, seq: 2 * c.hop, approach: c.d, route: c.route.slice(c.hop + 1), etaSec: c.dist / VMAX, hopsLeft: 3 });
         }
       }
 

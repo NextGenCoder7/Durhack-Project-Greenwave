@@ -11,7 +11,6 @@
 <header>
   <div class="wordmark">Green<span>wave</span></div>
   <div class="clock" id="clock">t = 0.0 s</div>
-  <div class="clock" id="speed-label">3×</div>
   <div class="clock" id="seed-label" title="Replay this run with ?seed=N"></div>
   <div class="spacer"></div>
   <div class="pill" id="pill-central">CENTRAL: ONLINE</div>
@@ -62,6 +61,7 @@
   <div class="group"><span class="title">Sim</span>
     <button data-action="speedDown">Slower<kbd>[</kbd></button>
     <button data-action="speedUp">Faster<kbd>]</kbd></button>
+    <span class="speed num" id="speed-label" title="Simulation speed">3×</span>
     <button data-action="reset">Reset<kbd>Shift+R</kbd></button>
   </div>
 </footer>

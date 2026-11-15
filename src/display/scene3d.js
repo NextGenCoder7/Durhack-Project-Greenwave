@@ -49,7 +49,7 @@ function dotSprite(color) {
   g.lineWidth = 6; g.strokeStyle = '#ffffff'; g.stroke();
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, sizeAttenuation: false }));
-  s.scale.set(0.035, 0.035, 1);                 // fraction-of-view height: ~17 px on a 350 px panel
+  s.scale.set(0.026, 0.026, 1);                 // fraction-of-view height: ~13 px on a 350 px panel
   s.renderOrder = 10;
   return s;
 }

@@ -387,8 +387,8 @@ export function createScene3D(canvas) {
   let ambYaw = 0, ambPrev = null;
 
   // ---------------- Dynamic: messages ----------------
-  const msgData = new THREE.InstancedMesh(new THREE.SphereGeometry(1.6, 8, 6), glowMat(C.data), MAX_MSG);
-  const msgPri = new THREE.InstancedMesh(new THREE.SphereGeometry(2.4, 10, 8), glowMat(C.siren, { transparent: true }), MAX_MSG);
+  const msgData = new THREE.InstancedMesh(new THREE.SphereGeometry(5, 12, 10), glowMat(C.data), MAX_MSG);
+  const msgPri = new THREE.InstancedMesh(new THREE.SphereGeometry(6.5, 14, 12), glowMat(C.siren, { transparent: true }), MAX_MSG);
   msgData.frustumCulled = msgPri.frustumCulled = false;
   msgData.count = msgPri.count = 0; city.add(msgData, msgPri);
 

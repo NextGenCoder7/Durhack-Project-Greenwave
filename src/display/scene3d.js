@@ -114,12 +114,14 @@ export function createScene3D(canvas) {
     controls.update(); afterViewChange();
     syncing = false;
   }
-  function resetView() { setView({ position: home.toArray(), target: [0, 0, 0] }); }
+  let followFresh = true;                       // next em-vehicle seen while following: swoop in close
+  function resetView() { setView({ position: home.toArray(), target: [0, 0, 0] }); followFresh = true; }
   /** Ambulance view: the camera hovers above the ambulance and travels with it (orbit and zoom still work). */
   function setFollow(on) {
     follow = !!on;
     controls.enablePan = !follow;
     if (!follow) return;
+    followFresh = false;
     const sph = new THREE.Spherical().setFromVector3(offset.copy(camera.position).sub(controls.target));
     sph.radius = FOLLOW_DIST; sph.phi = FOLLOW_PHI;
     setView({ offset: offset.setFromSpherical(sph).toArray() });
@@ -337,18 +339,49 @@ export function createScene3D(canvas) {
   city.add(bodies, cabs);
   const yaws = new Map();                      // car id -> { x, y, yaw }
 
-  // ---------------- Dynamic: ambulance ----------------
+  // ---------------- Dynamic: em-vehicle (ambulance, fire engine or police car) ----------------
+  // Each model has two light-bar lamps (a, b) that alternate; `colors` are their lit colours.
   const amb = new THREE.Group();
-  const ambBody = new THREE.Mesh(new THREE.BoxGeometry(6.5, 3.2, 3.4), mat(0xf4f7ff)); ambBody.position.y = 2;
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(6.55, 0.6, 3.45), glowMat(C.siren)); stripe.position.y = 2;
-  const barR = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.6), glowMat(C.siren)); barR.position.set(0.8, 3.9, -0.8);
-  const barB = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.6), glowMat(C.sirenBlue)); barB.position.set(0.8, 3.9, 0.8);
+  const box = (w, h, d, m, x, y, z = 0) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); return o; };
+  const lampPair = (g, x, y, ca, cb, spread = 0.8) => {
+    const a = box(1.2, 0.8, 1.4, glowMat(ca), x, y, -spread), b = box(1.2, 0.8, 1.4, glowMat(cb), x, y, spread);
+    g.add(a, b); return { a, b };
+  };
+  function buildAmbulance() {
+    const g = new THREE.Group();
+    g.add(box(6.5, 3.2, 3.4, mat(0xf4f7ff), 0, 2), box(6.55, 0.6, 3.45, glowMat(C.siren), 0, 2));
+    return { g, colors: [C.siren, C.sirenBlue], ...lampPair(g, 0.8, 3.9, C.siren, C.sirenBlue) };
+  }
+  function buildFireEngine() {
+    const g = new THREE.Group(), red = mat(0xd81e1e), white = mat(0xe8eef8);
+    g.add(box(8.5, 3, 3.4, red, -0.4, 1.9), box(2.2, 3.4, 3.5, mat(0xa01414), 3.6, 2.1));   // body + cab
+    g.add(box(2.25, 0.9, 3.55, glowMat(0x9fd8ff), 3.7, 2.8));                              // windscreen band
+    for (const z of [-1, 1]) g.add(box(6.6, 0.3, 0.3, white, -0.9, 3.7, z));                // ladder rails
+    for (let i = 0; i < 6; i++) g.add(box(0.25, 0.25, 2, white, -3.8 + i * 1.15, 3.7));      // rungs
+    return { g, colors: [0xff2020, 0xffffff], ...lampPair(g, 3.6, 4.2, 0xff2020, 0xffffff) };
+  }
+  function buildPoliceCar() {
+    const g = new THREE.Group();
+    g.add(box(5.6, 1.6, 3, mat(0x15224a), 0, 1.2), box(5.65, 0.5, 3.05, mat(0xf4f7ff), 0, 1.3));  // body + white band
+    g.add(box(2.8, 1.1, 2.7, mat(0xdfe6f2), -0.3, 2.55));                                        // cabin
+    return { g, colors: [0x2f6bff, 0xff2238], ...lampPair(g, -0.3, 3.4, 0x2f6bff, 0xff2238, 0.7) };
+  }
+  const models = { ambulance: buildAmbulance(), fire: buildFireEngine(), police: buildPoliceCar() };
+  let kind = 'ambulance';
+  for (const [k, m] of Object.entries(models)) { m.g.visible = k === kind; amb.add(m.g); }
   const halo = new THREE.Mesh(new THREE.SphereGeometry(7, 16, 12), glowMat(C.siren, { transparent: true, opacity: 0.22, depthWrite: false }));
   halo.position.y = 3;
   const sirenLight = new THREE.PointLight(C.siren, 0, 90, 1.5); sirenLight.position.y = 8;
-  amb.add(ambBody, stripe, barR, barB, halo);
+  amb.add(halo);
   city.add(sirenLight);                        // outside the (sometimes hidden) group: light count never changes
   amb.visible = false; city.add(amb);
+  const dimmed = new THREE.Color();
+  /** Which em-vehicle model to draw: 'ambulance' | 'fire' | 'police'. */
+  function setVehicleKind(k) {
+    if (!models[k]) return;
+    kind = k;
+    for (const [key, m] of Object.entries(models)) m.g.visible = key === k;
+  }
   const sirenRing = new THREE.Mesh(new THREE.RingGeometry(SIREN_RANGE - 1.2, SIREN_RANGE, 72), glowMat(C.siren, { transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }));
   sirenRing.rotation.x = -Math.PI / 2; sirenRing.visible = false; city.add(sirenRing);
   let ambYaw = 0, ambPrev = null;
@@ -360,22 +393,24 @@ export function createScene3D(canvas) {
   msgData.count = msgPri.count = 0; city.add(msgData, msgPri);
 
   // ---------------- Sizing, orientation, picking ----------------
-  let cssSize = 0, dpr = 1, pxPerM = 1;
+  let cssW = 0, cssH = 0, dpr = 1, pxPerM = 1;
   function measureScale() {
-    if (!cssSize) return;
+    if (!cssW) return;
     camera.updateMatrixWorld();
     const t = controls.target, a = t.clone().project(camera), b = t.clone().add(new THREE.Vector3(10, 0, 0)).project(camera);
-    pxPerM = Math.max(0.05, (Math.abs(b.x - a.x) * cssSize) / 2 / 10);
+    pxPerM = Math.max(0.05, (Math.abs(b.x - a.x) * cssW) / 2 / 10);
   }
   function resize() {
-    const box = canvas.parentElement;
-    const size = Math.floor(Math.min(box.clientWidth, box.clientHeight));
+    // The canvas fills its whole box (any shape). The camera frames the city by height; on a box taller
+    // than it is wide it zooms out so the city still fits across.
+    const host = canvas.parentElement;
+    const w = Math.floor(host.clientWidth), h = Math.floor(host.clientHeight);
     const d = Math.min(window.devicePixelRatio || 1, 2);
-    if (size < 50) return;
-    if (size === cssSize && d === dpr) return;
-    cssSize = size; dpr = d;
-    renderer.setPixelRatio(d); renderer.setSize(size, size);
-    camera.aspect = 1; camera.updateProjectionMatrix();
+    if (w < 50 || h < 50) return;
+    if (w === cssW && h === cssH && d === dpr) return;
+    cssW = w; cssH = h; dpr = d;
+    renderer.setPixelRatio(d); renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.zoom = Math.min(1, w / h); camera.updateProjectionMatrix();
     measureScale();
   }
   function setOrientation(yaw) { city.rotation.y = yaw; city.updateMatrixWorld(true); yaws.clear(); ambPrev = null; resetView(); }
@@ -408,7 +443,7 @@ export function createScene3D(canvas) {
   let frameNo = 0;
   function draw(s, { showMessages = false, hoverLink = null, time = 0, reducedMotion = false } = {}) {
     resize();
-    if (!cssSize || !s) return;
+    if (!cssW || !s) return;
     frameNo++;
 
     // Lights.
@@ -466,12 +501,14 @@ export function createScene3D(canvas) {
       sirenRing.position.set(sx(ambCar.x), 0.6, sz(ambCar.y));
       sirenLight.position.set(sx(ambCar.x), 8, sz(ambCar.y));
       const red = reducedMotion || Math.floor(time / 250) % 2 === 0;
-      barR.material.color.setHex(red ? C.siren : 0x3a1820);
-      barB.material.color.setHex(red ? 0x141c3a : C.sirenBlue);
-      halo.material.color.setHex(red ? C.siren : C.sirenBlue);
-      sirenLight.color.setHex(red ? C.siren : C.sirenBlue);
+      const mdl = models[kind], [ca, cb] = mdl.colors;
+      mdl.a.material.color.set(red || reducedMotion ? ca : dimmed.set(ca).multiplyScalar(0.15));
+      mdl.b.material.color.set(!red || reducedMotion ? cb : dimmed.set(cb).multiplyScalar(0.15));
+      halo.material.color.set(red ? ca : cb);
+      sirenLight.color.set(red ? ca : cb);
       sirenLight.intensity = 1800;
-      if (follow) {                            // glide the camera along with this panel's ambulance
+      if (follow && followFresh) setFollow(true);   // e.g. first dispatch after Reset: frame it close up
+      if (follow) {                            // glide the camera along with this panel's em-vehicle
         amb.updateWorldMatrix(true, false); amb.getWorldPosition(ambAt); ambAt.y = 0;
         offset.copy(camera.position).sub(controls.target);
         controls.target.lerp(ambAt, reducedMotion ? 1 : FOLLOW_LERP);
@@ -500,7 +537,7 @@ export function createScene3D(canvas) {
 
   setCity(1);
   return {
-    resize, draw, toWorld, toGround, setOrientation, setCity, getView, setView, resetView, setRoute, setTargets, setFollow,
+    resize, draw, toWorld, toGround, setOrientation, setCity, getView, setView, resetView, setRoute, setTargets, setFollow, setVehicleKind,
     /** Called with the new view whenever the user moves this camera (used to keep panels in sync). */
     onViewChange(cb) { onView = cb; },
     get pxPerMetre() { return pxPerM; },

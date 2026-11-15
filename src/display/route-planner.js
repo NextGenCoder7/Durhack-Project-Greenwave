@@ -1,4 +1,4 @@
-// Ambulance route planner: the presenter clicks an entry road, then junctions, then an exit road.
+// Em-vehicle (emergency vehicle) route planner: the presenter clicks an entry road, then junctions, then an exit road.
 // Pure logic in world metres (no DOM), so it can be tested headlessly.
 import { N, DIRS, STUB, junctionPos, dirVec, neighbour, opposite, left, right } from '../world/grid.js';
 import { entryJunction } from '../world/schedule.js';
@@ -96,7 +96,7 @@ export function createPlanner() {
     },
 
     describe() {
-      if (!entry) return 'Click the road where the ambulance enters';
+      if (!entry) return 'Click the road where the em-vehicle enters';
       const hops = route.length;
       if (planner.done) return `Route ready: ${hops} junction${hops === 1 ? '' : 's'}, edge to edge. Press Start.`;
       const n = hops + 1;

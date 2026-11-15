@@ -17,6 +17,8 @@ const SUB_S = 0.1;                    // world.tick limit
 const CLICK_TOL_PX = 10;              // how close to a link a click must land
 const SPEEDS = [1, 3, 5];
 const TAB_LABELS = ['Central', 'Fixed', 'Greenwave'];
+// Em-vehicle (emergency vehicle) models, picked at random per dispatch. Visual only.
+const VEHICLES = [{ kind: 'ambulance', name: 'ambulance' }, { kind: 'fire', name: 'fire engine' }, { kind: 'police', name: 'police car' }];
 const PANEL_DEFS = [
   { key: 'central', label: 'Central', make: () => createCentral() },
   { key: 'fixed', label: 'Fixed (central failed)', make: () => createFixed() },
@@ -89,7 +91,7 @@ function renderSetup() {
   const custom = ui.routeMode === 'custom';
   $('setup-status').textContent = custom
     ? planner.describe()
-    : 'Each ambulance takes a new random route across the city';
+    : 'Each em-vehicle takes a new random route across the city';
   $('setup-edit').hidden = !custom;
   $('btn-start').disabled = custom && !planner.started;
   $('dispatch-mode').textContent = custom ? 'planned route' : 'random route';
@@ -109,22 +111,24 @@ const actions = {
   failCentral() { broadcast(w => w.failCentral()); toast('Central controller failed', 'stop'); },
   spawnAmbulance() {
     if (ui.setup) { toast('Start the simulation first (Enter)', 'data'); return; }
-    if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) { toast('Ambulance already en route', 'data'); return; }
+    if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) { toast('Em-vehicle already en route', 'data'); return; }
     hideFinish();
     const trip = nextTrip();
     activeTrip = trip;
     broadcast(w => w.spawnAmbulance(trip));
+    const v = VEHICLES[Math.floor(Math.random() * VEHICLES.length)];   // looks only: same physics for all three
+    for (const m of allMaps) m.renderer.setVehicleKind?.(v.kind);
     arrivals = [];
-    toast(`Ambulance dispatched (${ui.routeMode === 'custom' ? 'planned' : 'random'} route)`, 'data');
+    toast(`Em-vehicle dispatched: ${v.name} (${ui.routeMode === 'custom' ? 'planned' : 'random'} route)`, 'data');
   },
   start() {
     if (!ui.setup) return;
     if (ui.routeMode === 'custom') {
-      if (!planner.started) { toast('Click the road where the ambulance enters first', 'data'); return; }
+      if (!planner.started) { toast('Click the road where the em-vehicle enters first', 'data'); return; }
       if (!planner.done) toast('Route continues straight on to the edge', 'data');
     }
     ui.setup = false; last = performance.now(); renderSetup();
-    toast('Simulation started — press A to dispatch the ambulance', 'go');
+    toast('Simulation started — press A to dispatch the em-vehicle', 'go');
   },
   runAgain() { actions.reset(); },
   dismissFinish() { hideFinish(); },
@@ -134,8 +138,8 @@ const actions = {
   },
   toggleFollow() {
     setFollow(!ui.follow);
-    if (ui.follow && !lastSnaps.some(s => s.metrics.ambulance.state === 'driving')) toast('Ambulance view: follows the next ambulance you dispatch (A)', 'data');
-    else toast(`Ambulance view ${ui.follow ? 'on' : 'off'}`, 'data');
+    if (ui.follow && !lastSnaps.some(s => s.metrics.ambulance.state === 'driving')) toast('Em-vehicle view: follows the next em-vehicle you dispatch (A)', 'data');
+    else toast(`Em-vehicle view ${ui.follow ? 'on' : 'off'}`, 'data');
   },
   routeRandom() { setRouteMode('random'); },
   routeCustom() { setRouteMode('custom'); },
@@ -252,7 +256,9 @@ const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas
 const focusCanvas = document.getElementById('focus-canvas');
 const focusMap = { canvas: focusCanvas, renderer: makeRenderer(focusCanvas), panelIndex: () => ui.focus };
 const allMaps = [...gridMaps, focusMap];
-if (!allMaps.every(m => m.renderer.setFollow)) document.querySelector('.view3d').hidden = true;   // 2D fallback
+const is3d = allMaps.every(m => m.renderer.setFollow);
+if (!is3d) document.querySelector('.view3d').hidden = true;   // 2D fallback
+document.body.classList.toggle('r3d', is3d);                 // 3D canvases fill their boxes (any shape)
 const strips = [...document.querySelectorAll('#grid-view .stat-strip')];
 let lastSnaps = [];
 let hover = null;                    // { canvas, link } for the link under the cursor
@@ -311,7 +317,7 @@ function frame(time) {
   const nowAmb = lastSnaps.map((s, i) => ({ label: TAB_LABELS[i], ...s.metrics.ambulance }));
   for (const ev of detectEvents(prevAmb, nowAmb)) {
     arrivals.push(`${ev.label} ${ev.journey.toFixed(1)} s`);
-    toast(`Ambulance arrived: ${arrivals.join(' · ')}`, 'go');
+    toast(`Em-vehicle arrived: ${arrivals.join(' · ')}`, 'go');
   }
   // All three ambulances home: offer a fresh run (back to the route menu).
   const allArrived = a => a && a.every(x => x.state === 'arrived');

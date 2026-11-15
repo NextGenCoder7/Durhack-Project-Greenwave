@@ -1,10 +1,10 @@
 // Comparison scoreboard (focus view) and per-panel stat strips (grid view). Reads snapshots only.
 import { bestIndex } from './demo-rules.js';
 
-/** Scoreboard rows. value() is what gets compared; null means "no data yet". Only the ambulance is shown. */
+/** Scoreboard rows. value() is what gets compared; null means "no data yet". Only the em-vehicle is shown. */
 const ROWS = [
   {
-    key: 'amb', label: 'Ambulance', short: 'Ambulance',
+    key: 'amb', label: 'Em-vehicle journey', short: 'Em-vehicle',
     value: m => (m.ambulance.state === 'none' ? null : m.ambulance.journey),
     text: (v, m) => (v === null ? '—' : `${v.toFixed(1)} s${m.ambulance.state === 'driving' ? ' …' : ''}`),
     sub: m => (m.ambulance.state === 'none' ? 'not dispatched' : `stopped ${m.ambulance.stopped.toFixed(1)} s`),
@@ -27,31 +27,30 @@ function bestByPanel(metrics) {
     const present = vals.filter(v => v !== null);
     if (present.length > 1 && present.every(v => v === present[0])) continue;   // all tied: no winner
     const i = bestIndex(vals);
-    if (i !== null) flags[i][row.key] = true;
+    if (i === null) continue;
+    const shown = v => (v === null ? null : v.toFixed(1));                        // ties as displayed all win
+    vals.forEach((v, k) => { if (shown(v) === shown(vals[i])) flags[k][row.key] = true; });
   }
   return flags;
 }
 
-export function renderScoreboard(tableEl, snapshots, labels) {
-  if (!tableEl.dataset.built) {
-    tableEl.innerHTML =
-      `<thead><tr><th></th>${labels.map((l, i) => `<th class="${i === 2 ? 'gw' : ''}">${l}</th>`).join('')}</tr></thead>` +
-      `<tbody>${ROWS.map(r => `<tr data-row="${r.key}"><td><span class="sb-label">${r.label}</span></td>` +
-        labels.map(() => '<td><div class="sb-val"></div><div class="sb-sub"></div></td>').join('') + '</tr>').join('')}</tbody>`;
-    tableEl.dataset.built = '1';
+/** Focus view: one tall card per panel, stacked to fill the column beside the map. */
+export function renderScoreboard(el, snapshots, labels) {
+  const row = ROWS[0];
+  if (!el.dataset.built) {
+    el.innerHTML = `<div class="sb-title">${row.label}</div>` + labels.map((l, i) =>
+      `<div class="sb-card${i === 2 ? ' gw' : ''}"><span class="sb-name">${l}</span><div class="sb-val"></div><div class="sb-sub"></div></div>`).join('');
+    el.dataset.built = '1';
   }
   const metrics = snapshots.map(s => s.metrics);
   const best = bestByPanel(metrics);
-  for (const row of ROWS) {
-    const cells = tableEl.querySelectorAll(`tr[data-row="${row.key}"] td`);
-    metrics.forEach((m, i) => {
-      const v = row.value(m), td = cells[i + 1];
-      const val = td.firstChild, sub = td.lastChild;
-      setText(val, row.text(v, m));
-      setClass(val, valueClass(row, v, !!best[i][row.key], 'sb-val'));
-      setText(sub, row.sub(m));
-    });
-  }
+  el.querySelectorAll('.sb-card').forEach((card, i) => {
+    const m = metrics[i], v = row.value(m), isBest = !!best[i][row.key];
+    setText(card.children[1], row.text(v, m));
+    setClass(card.children[1], valueClass(row, v, isBest, 'sb-val num'));
+    setText(card.children[2], row.sub(m));
+    card.classList.toggle('is-best', isBest);
+  });
 }
 
 /** Grid view: one strip per panel. `allSnapshots` lets each strip highlight where its panel is best. */

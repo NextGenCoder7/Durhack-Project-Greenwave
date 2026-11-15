@@ -19,7 +19,7 @@
   <div class="pill" id="pill-messages">GREENWAVE MESSAGES: ON</div>
   <span class="view3d">
     <button data-action="recentre">Recentre<kbd>H</kbd></button>
-    <button data-action="toggleFollow" id="btn-follow">Ambulance view<kbd>G</kbd></button>
+    <button data-action="toggleFollow" id="btn-follow">Em-vehicle view<kbd>G</kbd></button>
   </span>
   <button id="view-toggle" data-action="toggleView">Focus view<kbd>V</kbd></button>
 </header>
@@ -39,14 +39,14 @@
       </div>
       <div class="map-box"><canvas id="focus-canvas"></canvas></div>
     </div>
-    <table id="scoreboard"></table>
+    <div id="scoreboard"></div>
   </section>
 </main>
 
 <footer id="dock">
   <div class="group"><span class="title">Incidents</span>
     <button data-action="failCentral">Fail central<kbd>F</kbd></button>
-    <button data-action="spawnAmbulance">Spawn ambulance<kbd>A</kbd></button>
+    <button data-action="spawnAmbulance">Spawn em-vehicle<kbd>A</kbd></button>
     <span class="hint" id="dispatch-mode"></span>
   </div>
   <div class="group"><span class="title">Network</span>
@@ -65,9 +65,9 @@
   </div>
 </footer>
 
-<div id="setup" class="overlay-card" role="dialog" aria-label="Ambulance route setup">
+<div id="setup" class="overlay-card" role="dialog" aria-label="Em-vehicle route setup">
   <div class="setup-head">
-    <span class="title">Ambulance route</span>
+    <span class="title">Em-vehicle route</span>
     <div class="seg">
       <button data-route="random" data-action="routeRandom">Random</button>
       <button data-route="custom" data-action="routeCustom">Choose on map</button>
@@ -83,8 +83,8 @@
   </div>
 </div>
 
-<div id="finish" class="overlay-card" role="dialog" aria-label="All ambulances arrived">
-  <div class="setup-head"><span class="title">All ambulances arrived</span></div>
+<div id="finish" class="overlay-card" role="dialog" aria-label="All em-vehicles arrived">
+  <div class="setup-head"><span class="title">All em-vehicles arrived</span></div>
   <div id="finish-times"></div>
   <div class="setup-foot">
     <button data-action="dismissFinish">Keep watching<kbd>Esc</kbd></button>

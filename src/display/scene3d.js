@@ -11,6 +11,8 @@ const C = {
   // Signals: saturated pure green / red so they read from the back of a room; route preview is violet
   // so it never competes with either.
   sigGo: 0x22ff66, sigStop: 0xff2238, route: 0xc77dff,
+  // Show messages: one colour per message type, distinct from links (blue), signals and the route.
+  msgCar: 0xffe14d, msgEmv: 0xff3df0,
 };
 const W = WORLD_SIZE, H = W / 2;
 const ROAD_W = 16, PLATE = 16, SIREN_RANGE = 80;   // plate = road width; cars stop 12 m from centre (world BOX_HALF)
@@ -387,8 +389,8 @@ export function createScene3D(canvas) {
   let ambYaw = 0, ambPrev = null;
 
   // ---------------- Dynamic: messages ----------------
-  const msgData = new THREE.InstancedMesh(new THREE.SphereGeometry(5, 12, 10), glowMat(C.data), MAX_MSG);
-  const msgPri = new THREE.InstancedMesh(new THREE.SphereGeometry(6.5, 14, 12), glowMat(C.siren, { transparent: true }), MAX_MSG);
+  const msgData = new THREE.InstancedMesh(new THREE.SphereGeometry(5, 12, 10), glowMat(C.msgCar), MAX_MSG);
+  const msgPri = new THREE.InstancedMesh(new THREE.SphereGeometry(6.5, 14, 12), glowMat(C.msgEmv, { transparent: true }), MAX_MSG);
   msgData.frustumCulled = msgPri.frustumCulled = false;
   msgData.count = msgPri.count = 0; city.add(msgData, msgPri);
 

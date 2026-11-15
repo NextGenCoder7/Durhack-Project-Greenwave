@@ -225,6 +225,20 @@ button.help:hover, button.help[aria-expanded="true"] { color: var(--data); borde
 #help-pop b { display: block; margin-bottom: 4px; font-size: 15px; color: var(--data); }
 #help-pop p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text); }
 
+/* ---------- Show messages key ---------- */
+.msg-key {
+  position: absolute; left: 8px; bottom: 8px; z-index: 3;
+  display: flex; flex-direction: column; gap: 3px;
+  background: rgba(11, 18, 32, 0.85); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; color: var(--text); pointer-events: none;
+}
+.msg-key[hidden] { display: none; }
+.msg-key .title { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.msg-key span { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.msg-key .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.msg-key .dot.car { background: #ffe14d; box-shadow: 0 0 6px #ffe14d; }
+.msg-key .dot.emv { background: #ff3df0; box-shadow: 0 0 6px #ff3df0; width: 12px; height: 12px; }
+
 /* Laptop screens: keep the dock on one row so the maps get the height. */
 @media (max-width: 1500px), (max-height: 760px) {
   header { padding: 6px 14px; gap: 10px; }

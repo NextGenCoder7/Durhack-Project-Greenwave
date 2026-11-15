@@ -28,7 +28,7 @@
   <section id="grid-view">
     <div class="map-panel" data-panel="0"><h2>Central</h2><button class="help" data-help="central" aria-label="What does Central do?" aria-expanded="false">?</button><div class="map-box"><canvas></canvas></div><div class="stat-strip"></div></div>
     <div class="map-panel" data-panel="1"><h2>Fixed (central failed)</h2><button class="help" data-help="fixed" aria-label="What does Fixed do?" aria-expanded="false">?</button><div class="map-box"><canvas></canvas></div><div class="stat-strip"></div></div>
-    <div class="map-panel greenwave" data-panel="2"><h2>Greenwave</h2><button class="help" data-help="greenwave" aria-label="What does Greenwave do?" aria-expanded="false">?</button><div class="map-box"><canvas></canvas></div><div class="stat-strip"></div></div>
+    <div class="map-panel greenwave" data-panel="2"><h2>Greenwave</h2><button class="help" data-help="greenwave" aria-label="What does Greenwave do?" aria-expanded="false">?</button><div class="map-box"><canvas></canvas><div class="msg-key" hidden><span class="title">Messages</span><span><i class="dot car"></i>Cars coming</span><span><i class="dot emv"></i>Em-vehicle coming</span></div></div><div class="stat-strip"></div></div>
   </section>
   <section id="focus-view">
     <div class="focus-left">
@@ -37,7 +37,7 @@
         <button data-focus="1">Fixed<kbd>2</kbd></button>
         <button data-focus="2" class="active">Greenwave<kbd>3</kbd></button>
       </div>
-      <div class="map-box"><canvas id="focus-canvas"></canvas><button class="help" data-help="focus" aria-label="What does this board do?" aria-expanded="false">?</button></div>
+      <div class="map-box"><canvas id="focus-canvas"></canvas><div class="msg-key" id="focus-msg-key" hidden><span class="title">Messages</span><span><i class="dot car"></i>Cars coming</span><span><i class="dot emv"></i>Em-vehicle coming</span></div><button class="help" data-help="focus" aria-label="What does this board do?" aria-expanded="false">?</button></div>
     </div>
     <div id="scoreboard"></div>
   </section>

@@ -5,6 +5,7 @@ const C = {
   bg: '#0b1220', panel: '#111b2e', border: '#1f2d47', road: '#1c2a44', lane: '#2a3d61',
   text: '#e6f0ff', muted: '#8ea3c4', go: '#3dffa8', stop: '#ff5470', wait: '#ffb547',
   data: '#38bdf8', siren: '#ff3355', sirenBlue: '#4d7cff', car: '#9fb3d1', off: '#4a5a78',
+  msgCar: '#ffe14d', msgEmv: '#ff3df0',
 };
 const ROAD_W = 16;        // m
 const PLATE = 22;         // m, junction plate
@@ -122,13 +123,13 @@ export function createMapRenderer(canvas) {
         if (m.type === 'PRIORITY') {
           for (let i = 3; i >= 1; i--) {
             const p = at(Math.max(0, f - 0.08 * i));
-            ctx.globalAlpha = 0.25 * (4 - i) / 3; ctx.fillStyle = C.siren;
+            ctx.globalAlpha = 0.25 * (4 - i) / 3; ctx.fillStyle = C.msgEmv;
             ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
           }
-          ctx.globalAlpha = 1; glow(C.siren, 10); ctx.fillStyle = C.siren;
+          ctx.globalAlpha = 1; glow(C.msgEmv, 10); ctx.fillStyle = C.msgEmv;
           const p = at(f); ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill(); noGlow();
         } else {
-          ctx.fillStyle = C.data; const p = at(f);
+          ctx.fillStyle = C.msgCar; const p = at(f);
           ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
         }
       }

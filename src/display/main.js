@@ -288,6 +288,11 @@ function updateHeader(snaps) {
   btn.firstChild.textContent = `Messages: ${on ? 'ON' : 'OFF'}`;
   btn.className = on ? 'on' : 'off';
   $('btn-show').className = ui.showMessages ? 'on' : '';
+  // Message key: only the Greenwave board sends messages, so it sits on that map while they are shown.
+  for (const k of document.querySelectorAll('.msg-key')) {
+    const show = ui.showMessages && (k.id !== 'focus-msg-key' || ui.focus === 2);
+    if (k.hidden === show) k.hidden = !show;
+  }
   $('view-toggle').firstChild.textContent = ui.view === 'grid' ? 'Focus view' : 'Grid view';
   $('btn-follow').className = ui.follow ? 'on' : '';
 }
@@ -368,7 +373,9 @@ function frame(time) {
   }
   // All three ambulances home: offer a fresh run (back to the route menu).
   const allArrived = a => a && a.every(x => x.state === 'arrived');
-  if (!ui.setup && !ui.finished && allArrived(nowAmb) && prevAmb && !allArrived(prevAmb)) showFinish(nowAmb);
+  // pending.length: a dispatch queued this instant hasn't reached the worlds yet, so they only look finished.
+  if (!ui.setup && !ui.finished && !pending.length && allArrived(nowAmb) && prevAmb && !allArrived(prevAmb)) showFinish(nowAmb);
+  if (ui.finished && nowAmb.some(x => x.state === 'driving')) hideFinish();   // a new run is under way
   prevAmb = nowAmb;
   // Route overlay: the route being planned (with clickable targets), or the dispatched ambulance's route, dimmed.
   const driving = nowAmb.some(a => a.state === 'driving');

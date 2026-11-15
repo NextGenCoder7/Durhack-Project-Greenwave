@@ -110,8 +110,9 @@ function renderSetup() {
   $('setup-edit').hidden = !custom;
   $('btn-start').disabled = custom && !planner.started;
   $('dispatch-mode').textContent = custom ? 'planned route' : 'random route';
-  // While the route is being chosen, the setup card is the only thing that can be pressed.
-  for (const b of document.querySelectorAll('button')) if (!$('setup').contains(b) && !$('finish').contains(b)) b.disabled = ui.setup;
+  // While the route is being chosen, only the setup card and the 2D/3D toggle can be pressed.
+  const open = b => $('setup').contains(b) || $('finish').contains(b) || b.id === 'render-toggle';
+  for (const b of document.querySelectorAll('button')) if (!open(b)) b.disabled = ui.setup;
 }
 
 /** The trip for the next dispatch, per the chosen mode. */
@@ -257,7 +258,8 @@ document.addEventListener('keydown', e => {
   if (helpOpen && e.key === 'Escape') { hideHelp(); e.preventDefault(); return; }
   if (ui.finished && e.key === 'Escape') { actions.dismissFinish(); e.preventDefault(); return; }
   if (ui.setup && ui.routeMode === 'custom' && e.key === 'Backspace') { actions.routeUndo(); e.preventDefault(); return; }
-  // While the route is being chosen, every other shortcut (including Shift+R) is locked.
+  // While the route is being chosen, every other shortcut except D (2D/3D) is locked, including Shift+R.
+  if (ui.setup && k === 'd' && !e.shiftKey) { actions.toggleRender(); e.preventDefault(); return; }
   if (ui.setup) {
     if ((KEYS[k] || ['1', '2', '3'].includes(e.key)) && !e.shiftKey || (k === 'r' && e.shiftKey)) toast('Choose the em-vehicle route first, then press Enter', 'data');
     return;

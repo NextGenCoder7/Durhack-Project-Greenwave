@@ -40,7 +40,7 @@ URL options:
 
 ## Controls
 
-Choose the emergency vehicle's route on the setup card, then press **Enter** to start. While the setup card is open, every other button and shortcut is locked, so the only choices are Random or Choose on map (plus Undo and Clear for a planned route). You can still drag the camera.
+Choose the emergency vehicle's route on the setup card, then press **Enter** to start. While the setup card is open, every other button and shortcut is locked, so the only choices are Random or Choose on map (plus Undo and Clear for a planned route). You can still drag the camera and switch between 3D and 2D (`D`), so a route can be planned on either view.
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|

@@ -1,4 +1,5 @@
 # Durhack-Project-Greenwave
+Website: https://nextgencoder7.github.io/Durhack-Project-Greenwave/
 
 We are building a prpject called Greenwave for DurHack 2026. It is a browser-based simulation of a city’s traffic signals in which every junction makes its own decisions and talks only to its immediate neighbours. There is no central controller, so the system keeps working when links between junctions fail.
 

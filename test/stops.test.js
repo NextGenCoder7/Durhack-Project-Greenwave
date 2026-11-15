@@ -72,7 +72,9 @@ test('a car driving through junctions on green moves smoothly: no freezes, no ju
     if (prev) {
       const d = Math.hypot(car.x - prev.x, car.y - prev.y);
       assert.ok(d >= 0.2, `froze at t=${w.now.toFixed(1)} (moved ${d.toFixed(2)} m)`);
-      assert.ok(d <= 2, `jumped at t=${w.now.toFixed(1)} (moved ${d.toFixed(2)} m)`);
+      // Cars stop 12 m back from the junction centre, so the drawn crossing is 24 m in BOX_S (~1.6 m/tick);
+      // the exit tick also includes the first move on the next road (~2.6 m). The old freeze-then-jump was 7.8 m.
+      assert.ok(d <= 3, `jumped at t=${w.now.toFixed(1)} (moved ${d.toFixed(2)} m)`);
       steps++;
     }
     prev = car;

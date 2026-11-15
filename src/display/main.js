@@ -178,14 +178,24 @@ function linkUnder(map, e) {
   return linkAt(x, y, s.links, CLICK_TOL_PX / map.renderer.pxPerMetre);
 }
 
+// Moving one 3D camera moves them all, so the three panels stay directly comparable.
 for (const map of allMaps) {
+  map.renderer.onViewChange?.(view => { for (const m of allMaps) if (m !== map) m.renderer.setView(view); });
+}
+
+const DRAG_PX = 5;                   // a press that moves further than this is a camera drag, not a link click
+for (const map of allMaps) {
+  let down = null;
+  map.canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+  const wasDrag = e => down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_PX;
   map.canvas.addEventListener('mousemove', e => {
     const link = linkUnder(map, e);
     hover = link ? { canvas: map.canvas, link } : null;
     map.canvas.style.cursor = link ? 'pointer' : 'default';
   });
   map.canvas.addEventListener('mouseleave', () => { if (hover?.canvas === map.canvas) hover = null; });
-  map.canvas.addEventListener('click', e => { const link = linkUnder(map, e); if (link) cutOrRestore(link); });
+  map.canvas.addEventListener('click', e => { if (wasDrag(e)) return; const link = linkUnder(map, e); if (link) cutOrRestore(link); });
+  map.canvas.addEventListener('contextmenu', e => e.preventDefault());   // right drag pans
   new ResizeObserver(() => map.renderer.resize()).observe(map.canvas.parentElement);
 }
 

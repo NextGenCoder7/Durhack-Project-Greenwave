@@ -1,5 +1,6 @@
 // 3D view of one world snapshot (three.js). Drop-in for createMapRenderer: reads snapshots only.
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { junctionPos, dirVec, DIRS, PHASE_OF, WORLD_SIZE, N, SPACING, STUB, opposite, left } from '../world/grid.js';
 import { mulberry32 } from '../world/rng.js';
 
@@ -9,12 +10,14 @@ const C = {
   car: 0x9fb3d1, off: 0x4a5a78, park: 0x10261f, tree: 0x1f6b4a, trunk: 0x3a2a1e,
 };
 const W = WORLD_SIZE, H = W / 2;
-const ROAD_W = 16, PLATE = 22, SIREN_RANGE = 80;
+const ROAD_W = 16, PLATE = 16, SIREN_RANGE = 80;   // plate = road width; cars stop 12 m from centre (world BOX_HALF)
 const LINK_Y = 12;                    // links run overhead like fibre; picking intersects this plane
 const FRAME_R = 300;                  // m: radius of the circle the camera keeps in frame
 const ELEV = THREE.MathUtils.degToRad(62), FOV = 34;
 const MAX_CARS = 500, MAX_MSG = 400;
-const CAR = { L: 9, W: 4.2, H: 2.6 };  // exaggerated so cars read at panel size
+// Camera limits: zoom range (distance to the look-at point), tilt range, and how far the look-at point may pan.
+const MIN_DIST = 90, MAX_DIST = 1500, MIN_POLAR = 0.05, MAX_POLAR = THREE.MathUtils.degToRad(78), PAN_LIMIT = H + 60;
+const CAR = { L: 5, W: 3, H: 2.2 };    // short enough that a queue (drawn gap ~5 m) doesn't overlap
 
 // World metres (x right, y down) -> local scene coords (x, z), centred on the grid.
 const sx = x => x - H, sz = y => y - H;
@@ -55,7 +58,35 @@ export function createScene3D(canvas) {
   const dist = FRAME_R / Math.sin(THREE.MathUtils.degToRad(FOV / 2));
   camera.position.set(0, dist * Math.sin(ELEV), dist * Math.cos(ELEV));
   camera.lookAt(0, 0, 0);
+  const home = camera.position.clone();
   scene.fog = new THREE.Fog(C.bg, dist * 1.05, dist * 1.9);
+
+  // Orbit (left drag), pan (right drag / shift+drag), zoom (wheel / pinch), within fixed limits.
+  const controls = new OrbitControls(camera, canvas);
+  Object.assign(controls, {
+    minDistance: MIN_DIST, maxDistance: MAX_DIST, minPolarAngle: MIN_POLAR, maxPolarAngle: MAX_POLAR,
+    screenSpacePanning: false, zoomToCursor: true, rotateSpeed: 0.6,
+  });
+  let syncing = false, onView = null;
+  function afterViewChange() {
+    const t = controls.target;
+    t.x = THREE.MathUtils.clamp(t.x, -PAN_LIMIT, PAN_LIMIT); t.z = THREE.MathUtils.clamp(t.z, -PAN_LIMIT, PAN_LIMIT); t.y = 0;
+    const d = camera.position.distanceTo(t);
+    scene.fog.near = d * 1.05; scene.fog.far = d * 1.9 + 400;
+    measureScale();
+  }
+  controls.addEventListener('change', () => {
+    afterViewChange();
+    if (!syncing && onView) onView(getView());
+  });
+  const getView = () => ({ position: camera.position.toArray(), target: controls.target.toArray() });
+  function setView(v) {
+    syncing = true;
+    camera.position.fromArray(v.position); controls.target.fromArray(v.target);
+    controls.update(); afterViewChange();
+    syncing = false;
+  }
+  function resetView() { setView({ position: home.toArray(), target: [0, 0, 0] }); }
 
   scene.add(new THREE.HemisphereLight(0xb8ccff, 0x1a2540, 1.6));
   const sun = new THREE.DirectionalLight(0xdfe8ff, 1.6); sun.position.set(-300, 600, 250); scene.add(sun);
@@ -111,7 +142,7 @@ export function createScene3D(canvas) {
       // Stop bar across the approach lane.
       const bar = new THREE.Mesh(barGeo, barMat.stop);
       const lane = ROAD_W / 4;
-      bar.position.set(sx(p.x + v.x * (PLATE / 2 + 1) + l.x * lane), 0.35, sz(p.y + v.y * (PLATE / 2 + 1) + l.y * lane));
+      bar.position.set(sx(p.x + v.x * (PLATE / 2 + 0.5) + l.x * lane), 0.35, sz(p.y + v.y * (PLATE / 2 + 0.5) + l.y * lane));
       bar.rotation.y = yawOf(v.x, v.y);
       city.add(bar);
       row[d] = { red, green, bar };
@@ -219,11 +250,11 @@ export function createScene3D(canvas) {
 
   // ---------------- Dynamic: ambulance ----------------
   const amb = new THREE.Group();
-  const ambBody = new THREE.Mesh(new THREE.BoxGeometry(9, 3.6, 3.8), mat(0xf4f7ff)); ambBody.position.y = 2.2;
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(9.05, 0.7, 3.85), glowMat(C.siren)); stripe.position.y = 2.2;
-  const barR = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.6), glowMat(C.siren)); barR.position.set(1.5, 4.4, -0.9);
-  const barB = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.6), glowMat(C.sirenBlue)); barB.position.set(1.5, 4.4, 0.9);
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12), glowMat(C.siren, { transparent: true, opacity: 0.22, depthWrite: false }));
+  const ambBody = new THREE.Mesh(new THREE.BoxGeometry(6.5, 3.2, 3.4), mat(0xf4f7ff)); ambBody.position.y = 2;
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(6.55, 0.6, 3.45), glowMat(C.siren)); stripe.position.y = 2;
+  const barR = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.6), glowMat(C.siren)); barR.position.set(0.8, 3.9, -0.8);
+  const barB = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.6), glowMat(C.sirenBlue)); barB.position.set(0.8, 3.9, 0.8);
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(7, 16, 12), glowMat(C.siren, { transparent: true, opacity: 0.22, depthWrite: false }));
   halo.position.y = 3;
   const sirenLight = new THREE.PointLight(C.siren, 0, 90, 1.5); sirenLight.position.y = 8;
   amb.add(ambBody, stripe, barR, barB, halo);
@@ -242,7 +273,9 @@ export function createScene3D(canvas) {
   // ---------------- Sizing, orientation, picking ----------------
   let cssSize = 0, dpr = 1, pxPerM = 1;
   function measureScale() {
-    const a = new THREE.Vector3(0, 0, 0).project(camera), b = new THREE.Vector3(10, 0, 0).project(camera);
+    if (!cssSize) return;
+    camera.updateMatrixWorld();
+    const t = controls.target, a = t.clone().project(camera), b = t.clone().add(new THREE.Vector3(10, 0, 0)).project(camera);
     pxPerM = Math.max(0.05, (Math.abs(b.x - a.x) * cssSize) / 2 / 10);
   }
   function resize() {
@@ -256,7 +289,7 @@ export function createScene3D(canvas) {
     camera.aspect = 1; camera.updateProjectionMatrix();
     measureScale();
   }
-  function setOrientation(yaw) { city.rotation.y = yaw; city.updateMatrixWorld(true); yaws.clear(); ambPrev = null; }
+  function setOrientation(yaw) { city.rotation.y = yaw; city.updateMatrixWorld(true); yaws.clear(); ambPrev = null; resetView(); }
 
   const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -LINK_Y), hit = new THREE.Vector3();
   function toWorld(clientX, clientY) {
@@ -360,5 +393,10 @@ export function createScene3D(canvas) {
   }
 
   setCity(1);
-  return { resize, draw, toWorld, setOrientation, setCity, get pxPerMetre() { return pxPerM; } };
+  return {
+    resize, draw, toWorld, setOrientation, setCity, getView, setView, resetView,
+    /** Called with the new view whenever the user moves this camera (used to keep panels in sync). */
+    onViewChange(cb) { onView = cb; },
+    get pxPerMetre() { return pxPerM; },
+  };
 }

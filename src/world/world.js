@@ -11,7 +11,7 @@ export const MAX_DT = 0.1;       // s
 export const LINK_LATENCY_S = 0.05;
 export const SIREN_RANGE = 80;   // m
 // Drawing geometry for snapshots (does not affect physics).
-const BOX_HALF = 6;                                        // m from junction centre to box edge
+const BOX_HALF = 12;                                       // m from junction centre to the drawn stop point (behind the stop line)
 const LANE_OFFSET = 3;                                     // m from road centre to lane centre (drive on the left)
 const ROAD_DRAW_SCALE = (SPACING - 2 * BOX_HALF) / SPACING; // fit a 120 m segment between two box edges
 export const V2I_RANGE = 200;    // m

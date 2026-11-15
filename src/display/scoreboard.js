@@ -1,31 +1,13 @@
 // Comparison scoreboard (focus view) and per-panel stat strips (grid view). Reads snapshots only.
 import { bestIndex } from './demo-rules.js';
 
-/** Scoreboard rows, in the spec's order. value() is what gets compared; null means "no data yet". */
+/** Scoreboard rows. value() is what gets compared; null means "no data yet". Only the ambulance is shown. */
 const ROWS = [
   {
     key: 'amb', label: 'Ambulance', short: 'Ambulance',
     value: m => (m.ambulance.state === 'none' ? null : m.ambulance.journey),
     text: (v, m) => (v === null ? '—' : `${v.toFixed(1)} s${m.ambulance.state === 'driving' ? ' …' : ''}`),
     sub: m => (m.ambulance.state === 'none' ? 'not dispatched' : `stopped ${m.ambulance.stopped.toFixed(1)} s`),
-  },
-  {
-    key: 'stops', label: 'Stops per car · last 60 s', short: 'Stops / car',
-    value: m => (m.exited ? m.rollingStopsPerCar : null),
-    text: v => (v === null ? '—' : v.toFixed(2)),
-    sub: m => (m.exited ? `overall ${m.stopsPerCar.toFixed(2)}` : ''),
-  },
-  {
-    key: 'wait', label: 'Avg car wait · last 60 s', short: 'Avg wait',
-    value: m => (m.exited ? m.rollingWait : null),
-    text: v => (v === null ? '—' : `${v.toFixed(1)} s`),
-    sub: m => (m.exited ? `overall ${m.avgWait.toFixed(1)} s` : ''),
-  },
-  {
-    key: 'conf', label: 'Conflicting greens', short: 'Conflicts', noBest: true,
-    value: m => m.conflicts,
-    text: v => String(v),
-    sub: () => '',
   },
 ];
 
@@ -34,7 +16,6 @@ function setText(el, t) { if (el.textContent !== t) el.textContent = t; }
 function setClass(el, c) { if (el.className !== c) el.className = c; }
 
 function valueClass(row, v, isBest, base) {
-  if (row.key === 'conf') return `${base} ${v === 0 ? 'zero' : 'nonzero'}`;
   return isBest ? `${base} best` : base;
 }
 
@@ -42,7 +23,6 @@ function valueClass(row, v, isBest, base) {
 function bestByPanel(metrics) {
   const flags = metrics.map(() => ({}));
   for (const row of ROWS) {
-    if (row.noBest) continue;
     const vals = metrics.map(m => row.value(m));
     const present = vals.filter(v => v !== null);
     if (present.length > 1 && present.every(v => v === present[0])) continue;   // all tied: no winner

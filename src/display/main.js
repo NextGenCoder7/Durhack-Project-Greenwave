@@ -323,7 +323,9 @@ function linkUnder(map, e) {
 }
 
 // Moving one 3D camera moves them all, so the three panels stay directly comparable.
+// Moving the camera yourself leaves em-vehicle view (the button unticks).
 for (const map of allMaps) {
+  map.renderer.onUserMove?.(() => { if (ui.follow) { setFollow(false); toast('Em-vehicle view off', 'data'); } });
   map.renderer.onViewChange?.(view => { for (const m of allMaps) if (m !== map) m.renderer.setView(view); });
 }
 
@@ -381,7 +383,8 @@ function frame(time) {
   const driving = nowAmb.some(a => a.state === 'driving');
   const routePts = planning() ? planner.path() : driving && activeTrip ? planner.path(activeTrip) : null;
   const targets = planning() ? planner.targets() : null;
-  for (const m of allMaps) { m.renderer.setRoute?.(routePts, { dim: !planning() }); m.renderer.setTargets?.(targets); }
+  const finished = planning() ? planner.done : true;   // a dispatched trip always runs edge to edge
+  for (const m of allMaps) { m.renderer.setRoute?.(routePts, { dim: !planning(), finished }); m.renderer.setTargets?.(targets); }
   if (ui.view === 'grid') {
     for (const m of gridMaps) drawMap(m, time);
     renderStatStrips(strips, lastSnaps);

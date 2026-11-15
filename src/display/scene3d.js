@@ -40,6 +40,26 @@ function textSprite(text, color, h = 14) {
   return s;
 }
 
+/** Pill label (text on a coloured pill) that stays the same size on screen at any zoom. */
+function pillSprite(text, bg, fg = '#ffffff') {
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  const font = 'bold 40px Bahnschrift, "Segoe UI", sans-serif';
+  g.font = font;
+  const w = Math.ceil(g.measureText(text).width) + 44, h = 64;
+  c.width = w; c.height = h;
+  g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = bg; g.beginPath(); g.roundRect(2, 2, w - 4, h - 4, 28); g.fill();
+  g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.85)'; g.stroke();
+  g.fillStyle = fg; g.fillText(text, w / 2, h / 2 + 2);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, sizeAttenuation: false }));
+  const H_ = 0.05;                              // fraction-of-view height; ~25 px on a 350 px panel
+  s.scale.set(H_ * (w / h), H_, 1);
+  s.center.set(0.5, 0);                         // anchor at the bottom: the pill sits just above its point
+  s.renderOrder = 10;
+  return s;
+}
+
 function haloTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d'), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -99,9 +119,12 @@ export function createScene3D(canvas) {
     scene.fog.near = d * 1.05; scene.fog.far = d * 1.9 + 400;
     measureScale();
   }
+  let onUserMove = null;
   controls.addEventListener('change', () => {
     afterViewChange();
-    if (!syncing && onView) onView(getView());
+    if (syncing) return;                        // programmatic (sync / follow), not the user
+    if (follow && onUserMove) onUserMove();     // user moved the camera: leave em-vehicle view
+    if (onView) onView(getView());
   });
   // While following, panels share only the camera's offset from their own ambulance (each follows its own).
   let follow = false;
@@ -215,13 +238,28 @@ export function createScene3D(canvas) {
   const tipGeo = arrowGeometry(16, 14);
   const ringGeo = new THREE.RingGeometry(9, 12, 36); ringGeo.rotateX(-Math.PI / 2);
   let routeKey = '', targetKey = '';
+  const startLabel = pillSprite('START', '#2a9d5c'), endLabel = pillSprite('END', '#c0264a');
+  const startMark = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.6, 28), glowMat(0x3dffa8, { transparent: true, opacity: 0.9 }));
+  startLabel.visible = endLabel.visible = startMark.visible = false;
+  city.add(startLabel, endLabel, startMark);
   const clearGroup = gr => { while (gr.children.length) gr.remove(gr.children[0]); };
-  /** pts: world-metre polyline, or null. dim: drawn fainter (while the ambulance drives). */
-  function setRoute(pts, { dim = false } = {}) {
-    const key = pts && pts.length > 1 ? JSON.stringify(pts) + dim : '';
+  /**
+   * pts: world-metre polyline, or null. dim: drawn fainter (while the em-vehicle drives).
+   * finished: the route reaches its exit, so it gets an END label (START is shown whenever there is a route).
+   */
+  function setRoute(pts, { dim = false, finished = true } = {}) {
+    const key = pts && pts.length > 1 ? JSON.stringify(pts) + dim + finished : '';
     if (key === routeKey) return;
     routeKey = key; clearGroup(routeGroup);
+    startLabel.visible = startMark.visible = endLabel.visible = !!key;
     if (!key) return;
+    // Anchor halfway along the entry / exit road (the world edge itself can fall outside the frame).
+    const mid = (p, q) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+    const first = mid(pts[0], pts[1]), last = finished ? mid(pts[pts.length - 1], pts[pts.length - 2]) : pts[pts.length - 1];
+    startMark.position.set(sx(first.x), 1.2, sz(first.y));
+    startLabel.position.set(sx(first.x), 8, sz(first.y));
+    endLabel.position.set(sx(last.x), 8, sz(last.y));
+    endLabel.visible = finished;
     const m = dim ? routeDim : routeMat;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1], b = pts[i], len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -542,6 +580,8 @@ export function createScene3D(canvas) {
     resize, draw, toWorld, toGround, setOrientation, setCity, getView, setView, resetView, setRoute, setTargets, setFollow, setVehicleKind,
     /** Called with the new view whenever the user moves this camera (used to keep panels in sync). */
     onViewChange(cb) { onView = cb; },
+    /** Called when the user moves the camera (drag, pan, zoom) while em-vehicle view is on. */
+    onUserMove(cb) { onUserMove = cb; },
     get pxPerMetre() { return pxPerM; },
   };
 }

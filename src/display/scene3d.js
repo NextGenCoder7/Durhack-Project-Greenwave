@@ -20,6 +20,8 @@ const ELEV = THREE.MathUtils.degToRad(62), FOV = 34;
 const MAX_CARS = 500, MAX_MSG = 400;
 // Camera limits: zoom range (distance to the look-at point), tilt range, and how far the look-at point may pan.
 const MIN_DIST = 90, MAX_DIST = 1500, MIN_POLAR = 0.05, MAX_POLAR = THREE.MathUtils.degToRad(78), PAN_LIMIT = H + 60;
+// Ambulance view: camera this far from the ambulance, tilted this far from straight down.
+const FOLLOW_DIST = 230, FOLLOW_PHI = THREE.MathUtils.degToRad(28), FOLLOW_LERP = 0.15;
 const CAR = { L: 5, W: 3, H: 2.2 };    // short enough that a queue (drawn gap ~5 m) doesn't overlap
 
 // World metres (x right, y down) -> local scene coords (x, z), centred on the grid.
@@ -99,14 +101,29 @@ export function createScene3D(canvas) {
     afterViewChange();
     if (!syncing && onView) onView(getView());
   });
-  const getView = () => ({ position: camera.position.toArray(), target: controls.target.toArray() });
+  // While following, panels share only the camera's offset from their own ambulance (each follows its own).
+  let follow = false;
+  const offset = new THREE.Vector3(), ambAt = new THREE.Vector3();
+  const getView = () => (follow
+    ? { offset: camera.position.clone().sub(controls.target).toArray() }
+    : { position: camera.position.toArray(), target: controls.target.toArray() });
   function setView(v) {
     syncing = true;
-    camera.position.fromArray(v.position); controls.target.fromArray(v.target);
+    if (v.offset) camera.position.copy(controls.target).add(offset.fromArray(v.offset));
+    else { camera.position.fromArray(v.position); controls.target.fromArray(v.target); }
     controls.update(); afterViewChange();
     syncing = false;
   }
   function resetView() { setView({ position: home.toArray(), target: [0, 0, 0] }); }
+  /** Ambulance view: the camera hovers above the ambulance and travels with it (orbit and zoom still work). */
+  function setFollow(on) {
+    follow = !!on;
+    controls.enablePan = !follow;
+    if (!follow) return;
+    const sph = new THREE.Spherical().setFromVector3(offset.copy(camera.position).sub(controls.target));
+    sph.radius = FOLLOW_DIST; sph.phi = FOLLOW_PHI;
+    setView({ offset: offset.setFromSpherical(sph).toArray() });
+  }
 
   scene.add(new THREE.HemisphereLight(0xb8ccff, 0x1a2540, 1.6));
   const sun = new THREE.DirectionalLight(0xdfe8ff, 1.6); sun.position.set(-300, 600, 250); scene.add(sun);
@@ -188,9 +205,9 @@ export function createScene3D(canvas) {
   const routeGroup = new THREE.Group(), targetGroup = new THREE.Group();
   city.add(routeGroup, targetGroup);
   const routeMat = glowMat(C.route, { transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
-  const routeDim = glowMat(C.route, { transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+  const routeDim = glowMat(C.route, { transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
   const targetMat = glowMat(0xffffff, { transparent: true, side: THREE.DoubleSide, depthWrite: false });
-  const segGeo = new THREE.BoxGeometry(1, 0.3, 4), nodeGeo = new THREE.CylinderGeometry(4.5, 4.5, 0.4, 24);
+  const segGeo = new THREE.BoxGeometry(1, 0.3, 2.6), nodeGeo = new THREE.CylinderGeometry(3.2, 3.2, 0.4, 24);
   const tipGeo = arrowGeometry(16, 14);
   const ringGeo = new THREE.RingGeometry(9, 12, 36); ringGeo.rotateX(-Math.PI / 2);
   let routeKey = '', targetKey = '';
@@ -454,6 +471,13 @@ export function createScene3D(canvas) {
       halo.material.color.setHex(red ? C.siren : C.sirenBlue);
       sirenLight.color.setHex(red ? C.siren : C.sirenBlue);
       sirenLight.intensity = 1800;
+      if (follow) {                            // glide the camera along with this panel's ambulance
+        amb.updateWorldMatrix(true, false); amb.getWorldPosition(ambAt); ambAt.y = 0;
+        offset.copy(camera.position).sub(controls.target);
+        controls.target.lerp(ambAt, reducedMotion ? 1 : FOLLOW_LERP);
+        camera.position.copy(controls.target).add(offset);
+        syncing = true; controls.update(); afterViewChange(); syncing = false;
+      }
     } else { sirenLight.intensity = 0; ambPrev = null; }
 
     // Messages.
@@ -476,7 +500,7 @@ export function createScene3D(canvas) {
 
   setCity(1);
   return {
-    resize, draw, toWorld, toGround, setOrientation, setCity, getView, setView, resetView, setRoute, setTargets,
+    resize, draw, toWorld, toGround, setOrientation, setCity, getView, setView, resetView, setRoute, setTargets, setFollow,
     /** Called with the new view whenever the user moves this camera (used to keep panels in sync). */
     onViewChange(cb) { onView = cb; },
     get pxPerMetre() { return pxPerM; },

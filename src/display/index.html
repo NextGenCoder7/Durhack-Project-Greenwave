@@ -17,6 +17,10 @@
   <div class="pill" id="pill-central">CENTRAL: ONLINE</div>
   <div class="pill" id="pill-links">LINKS CUT: 0/24</div>
   <div class="pill" id="pill-messages">GREENWAVE MESSAGES: ON</div>
+  <span class="view3d">
+    <button data-action="recentre">Recentre<kbd>H</kbd></button>
+    <button data-action="toggleFollow" id="btn-follow">Ambulance view<kbd>G</kbd></button>
+  </span>
   <button id="view-toggle" data-action="toggleView">Focus view<kbd>V</kbd></button>
 </header>
 
@@ -61,7 +65,7 @@
   </div>
 </footer>
 
-<div id="setup" role="dialog" aria-label="Ambulance route setup">
+<div id="setup" class="overlay-card" role="dialog" aria-label="Ambulance route setup">
   <div class="setup-head">
     <span class="title">Ambulance route</span>
     <div class="seg">
@@ -76,6 +80,15 @@
       <button data-action="routeClear">Clear</button>
     </span>
     <button id="btn-start" data-action="start" class="primary">Start simulation<kbd>Enter</kbd></button>
+  </div>
+</div>
+
+<div id="finish" class="overlay-card" role="dialog" aria-label="All ambulances arrived">
+  <div class="setup-head"><span class="title">All ambulances arrived</span></div>
+  <div id="finish-times"></div>
+  <div class="setup-foot">
+    <button data-action="dismissFinish">Keep watching<kbd>Esc</kbd></button>
+    <button data-action="runAgain" class="primary">Reset &amp; choose route<kbd>Enter</kbd></button>
   </div>
 </div>
 

@@ -3,7 +3,7 @@ import { createWorld } from '../world/world.js';
 import { createCentral } from '../controllers/central.js';
 import { createFixed } from '../controllers/fixed.js';
 import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
-import { canSpawnAmbulance, linkAt, detectEvents } from './demo-rules.js';
+import { canSpawnAmbulance, linkAt, detectEvents, bestIndex } from './demo-rules.js';
 import { showToast } from './toasts.js';
 import { createMapRenderer } from './map-renderer.js';
 import { createScene3D } from './scene3d.js';
@@ -33,7 +33,7 @@ const randomSeed = () => 1 + Math.floor(Math.random() * 99999);
 let seed = pinnedSeed ?? randomSeed();
 const $ = id => document.getElementById(id);
 
-const ui = { view: 'grid', focus: 2, showMessages: false, messagesOn: true, speed: 3, setup: true, routeMode: pinnedSeed ? 'custom' : 'random' };
+const ui = { view: 'grid', focus: 2, showMessages: false, messagesOn: true, speed: 3, setup: true, routeMode: pinnedSeed ? 'custom' : 'random', follow: false, finished: false };
 const planner = createPlanner();
 if (pinnedSeed) planner.load(AMBULANCE);
 let activeTrip = null;                // the trip of the ambulance currently (or last) dispatched
@@ -54,7 +54,30 @@ function build() {
   last = performance.now();
   ui.messagesOn = true;
   activeTrip = null;
+  hideFinish();
   enterSetup();
+}
+
+// ---------------- Finish: every panel's ambulance has arrived ----------------
+function showFinish(amb) {
+  ui.finished = true;
+  const fastest = amb[bestIndex(amb.map(a => a.journey))].journey.toFixed(1);   // ties all count as fastest
+  $('finish-times').replaceChildren(...amb.map(a => {
+    const el = document.createElement('div');
+    el.className = `finish-time${a.journey.toFixed(1) === fastest ? ' best' : ''}`;
+    el.innerHTML = `<small></small><b class="num"></b>`;
+    el.querySelector('small').textContent = a.label;
+    el.querySelector('b').textContent = `${a.journey.toFixed(1)} s`;
+    return el;
+  }));
+  document.body.classList.add('finished');
+}
+function hideFinish() { ui.finished = false; document.body.classList.remove('finished'); }
+
+// ---------------- 3D camera: recentre and ambulance view ----------------
+function setFollow(on) {
+  ui.follow = on;
+  for (const m of allMaps) m.renderer.setFollow?.(on);
 }
 
 // ---------------- Setup: choose the ambulance route, then start ----------------
@@ -87,6 +110,7 @@ const actions = {
   spawnAmbulance() {
     if (ui.setup) { toast('Start the simulation first (Enter)', 'data'); return; }
     if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) { toast('Ambulance already en route', 'data'); return; }
+    hideFinish();
     const trip = nextTrip();
     activeTrip = trip;
     broadcast(w => w.spawnAmbulance(trip));
@@ -101,6 +125,17 @@ const actions = {
     }
     ui.setup = false; last = performance.now(); renderSetup();
     toast('Simulation started — press A to dispatch the ambulance', 'go');
+  },
+  runAgain() { actions.reset(); },
+  dismissFinish() { hideFinish(); },
+  recentre() {
+    setFollow(false);
+    for (const m of allMaps) m.renderer.resetView?.();
+  },
+  toggleFollow() {
+    setFollow(!ui.follow);
+    if (ui.follow && !lastSnaps.some(s => s.metrics.ambulance.state === 'driving')) toast('Ambulance view: follows the next ambulance you dispatch (A)', 'data');
+    else toast(`Ambulance view ${ui.follow ? 'on' : 'off'}`, 'data');
   },
   routeRandom() { setRouteMode('random'); },
   routeCustom() { setRouteMode('custom'); },
@@ -152,6 +187,7 @@ for (const b of document.querySelectorAll('[data-focus]')) {
 const KEYS = {
   f: 'failCentral', a: 'spawnAmbulance', c: 'cutAll', r: 'restoreAll',
   m: 'toggleMessages', o: 'toggleShowMessages', v: 'toggleView', '[': 'speedDown', ']': 'speedUp',
+  h: 'recentre', g: 'toggleFollow',
 };
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
@@ -159,6 +195,8 @@ document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'r' && e.shiftKey) { actions.reset(); e.preventDefault(); return; }
   if (ui.setup && e.key === 'Enter') { actions.start(); e.preventDefault(); return; }
+  if (ui.finished && e.key === 'Enter') { actions.runAgain(); e.preventDefault(); return; }
+  if (ui.finished && e.key === 'Escape') { actions.dismissFinish(); e.preventDefault(); return; }
   if (ui.setup && ui.routeMode === 'custom' && e.key === 'Backspace') { actions.routeUndo(); e.preventDefault(); return; }
   if (['1', '2', '3'].includes(e.key)) { actions.setFocus(Number(e.key) - 1); e.preventDefault(); return; }
   if (KEYS[k] && !e.shiftKey) { actions[KEYS[k]](); e.preventDefault(); }
@@ -200,6 +238,7 @@ function updateHeader(snaps) {
   btn.className = on ? 'on' : 'off';
   $('btn-show').className = ui.showMessages ? 'on' : '';
   $('view-toggle').firstChild.textContent = ui.view === 'grid' ? 'Focus view' : 'Grid view';
+  $('btn-follow').className = ui.follow ? 'on' : '';
 }
 
 // ---------------- Maps ----------------
@@ -213,6 +252,7 @@ const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas
 const focusCanvas = document.getElementById('focus-canvas');
 const focusMap = { canvas: focusCanvas, renderer: makeRenderer(focusCanvas), panelIndex: () => ui.focus };
 const allMaps = [...gridMaps, focusMap];
+if (!allMaps.every(m => m.renderer.setFollow)) document.querySelector('.view3d').hidden = true;   // 2D fallback
 const strips = [...document.querySelectorAll('#grid-view .stat-strip')];
 let lastSnaps = [];
 let hover = null;                    // { canvas, link } for the link under the cursor
@@ -273,6 +313,9 @@ function frame(time) {
     arrivals.push(`${ev.label} ${ev.journey.toFixed(1)} s`);
     toast(`Ambulance arrived: ${arrivals.join(' · ')}`, 'go');
   }
+  // All three ambulances home: offer a fresh run (back to the route menu).
+  const allArrived = a => a && a.every(x => x.state === 'arrived');
+  if (!ui.setup && !ui.finished && allArrived(nowAmb) && prevAmb && !allArrived(prevAmb)) showFinish(nowAmb);
   prevAmb = nowAmb;
   // Route overlay: the route being planned (with clickable targets), or the dispatched ambulance's route, dimmed.
   const driving = nowAmb.some(a => a.state === 'driving');

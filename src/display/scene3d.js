@@ -8,6 +8,9 @@ const C = {
   bg: 0x0b1220, ground: 0x0d1626, block: 0x121c30, panel: 0x111b2e, road: 0x1c2a44, lane: 0x3a5280,
   go: 0x3dffa8, stop: 0xff5470, wait: 0xffb547, data: 0x38bdf8, siren: 0xff3355, sirenBlue: 0x4d7cff,
   car: 0x9fb3d1, off: 0x4a5a78, park: 0x10261f, tree: 0x1f6b4a, trunk: 0x3a2a1e,
+  // Signals: saturated pure green / red so they read from the back of a room; route preview is violet
+  // so it never competes with either.
+  sigGo: 0x22ff66, sigStop: 0xff2238, route: 0xc77dff,
 };
 const W = WORLD_SIZE, H = W / 2;
 const ROAD_W = 16, PLATE = 16, SIREN_RANGE = 80;   // plate = road width; cars stop 12 m from centre (world BOX_HALF)
@@ -31,6 +34,23 @@ function textSprite(text, color, h = 14) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
   s.scale.set(h * 4, h, 1);
   return s;
+}
+
+function haloTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.25, 'rgba(255,255,255,0.7)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+/** Flat chevron arrow lying on the ground, pointing along local +x. */
+function arrowGeometry(len, wid) {
+  const sh = new THREE.Shape();
+  sh.moveTo(len / 2, 0); sh.lineTo(-len / 2, wid / 2); sh.lineTo(-len / 6, 0); sh.lineTo(-len / 2, -wid / 2); sh.closePath();
+  const g = new THREE.ShapeGeometry(sh);
+  g.rotateX(-Math.PI / 2);                 // shape XY -> ground XZ
+  return g;
 }
 
 function windowTexture(rng) {
@@ -118,36 +138,88 @@ export function createScene3D(canvas) {
     const plate = new THREE.Mesh(new THREE.BoxGeometry(PLATE, 0.3, PLATE), plateMat); plate.position.set(sx(p.x), 0.15, sz(p.y)); city.add(plate);
   }
 
-  // ---------------- Static: traffic lights (poles, heads, stop bars) ----------------
-  const lamp = { redOn: glowMat(C.stop), redOff: mat(0x3a1820), greenOn: glowMat(C.go), greenOff: mat(0x143428) };
-  const barMat = { go: glowMat(C.go), stop: glowMat(C.stop) };
+  // ---------------- Static: traffic lights ----------------
+  // Every approach shows its state three ways, so it reads at any zoom and without relying on colour alone:
+  //   1. a tall signal head (red lamp on top, green below) with a glowing halo around the lit lamp;
+  //   2. red: a thick glowing stop bar across the lane;  green: a glowing arrow pointing through the junction.
+  const lamp = { redOn: glowMat(C.sigStop), redOff: mat(0x2a1216), greenOn: glowMat(C.sigGo), greenOff: mat(0x0f2a18) };
+  const haloTex = haloTexture();
+  const haloMat = c => new THREE.SpriteMaterial({ map: haloTex, color: c, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+  const halos = { go: haloMat(C.sigGo), stop: haloMat(C.sigStop) };
+  const barMat = glowMat(C.sigStop), arrowMat = glowMat(C.sigGo, { side: THREE.DoubleSide });
   const poleMat = mat(0x2a3650), headMat = mat(0x0a0f1a);
-  const poleGeo = new THREE.CylinderGeometry(0.45, 0.45, 9, 6), headGeo = new THREE.BoxGeometry(1.6, 5, 1.6);
-  const lampGeo = new THREE.SphereGeometry(0.9, 10, 8), barGeo = new THREE.BoxGeometry(1.4, 0.5, ROAD_W / 2 - 1);
-  const signals = [];                          // [j][d] -> { red, green, bar }
+  const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 12, 6), headGeo = new THREE.BoxGeometry(2.4, 7.5, 2.4);
+  const lampGeo = new THREE.SphereGeometry(1.3, 12, 10), barGeo = new THREE.BoxGeometry(3, 0.6, ROAD_W / 2 - 0.4);
+  const arrowGeo = arrowGeometry(7, 6.5);
+  const RED_Y = 16.6, GREEN_Y = 12.4;
+  const signals = [];                          // [j][d] -> { red, green, bar, arrow, halo }
   for (let j = 0; j < NJ; j++) {
     const p = junctionPos(j), row = {};
     for (const d of DIRS) {
-      const v = dirVec(d), heading = opposite(d), l = dirVec(left(heading));
+      const v = dirVec(d), heading = opposite(d), h = dirVec(heading), l = dirVec(left(heading));
       const g = new THREE.Group();
       // Corner on the approaching driver's side (drive on the left), just before the stop line.
       const cx = p.x + v.x * (PLATE / 2 + 2) + l.x * (ROAD_W / 2 + 1.5), cy = p.y + v.y * (PLATE / 2 + 2) + l.y * (ROAD_W / 2 + 1.5);
       g.position.set(sx(cx), 0, sz(cy));
-      const pole = new THREE.Mesh(poleGeo, poleMat); pole.position.y = 4.5; g.add(pole);
-      const head = new THREE.Mesh(headGeo, headMat); head.position.y = 10.5; g.add(head);
+      const pole = new THREE.Mesh(poleGeo, poleMat); pole.position.y = 6; g.add(pole);
+      const head = new THREE.Mesh(headGeo, headMat); head.position.y = 14.5; g.add(head);
       const red = new THREE.Mesh(lampGeo, lamp.redOff), green = new THREE.Mesh(lampGeo, lamp.greenOff);
       // Lamps face the approaching cars (towards side d).
-      red.position.set(v.x * 0.9, 12, v.y * 0.9); green.position.set(v.x * 0.9, 9, v.y * 0.9);
-      g.add(red, green); city.add(g);
-      // Stop bar across the approach lane.
-      const bar = new THREE.Mesh(barGeo, barMat.stop);
+      red.position.set(v.x * 1.2, RED_Y, v.y * 1.2); green.position.set(v.x * 1.2, GREEN_Y, v.y * 1.2);
+      const halo = new THREE.Sprite(halos.stop); halo.scale.set(20, 20, 1); halo.position.copy(red.position);
+      g.add(red, green, halo); city.add(g);
       const lane = ROAD_W / 4;
-      bar.position.set(sx(p.x + v.x * (PLATE / 2 + 0.5) + l.x * lane), 0.35, sz(p.y + v.y * (PLATE / 2 + 0.5) + l.y * lane));
+      // Red: stop bar across the approach lane, at the stop line.
+      const bar = new THREE.Mesh(barGeo, barMat);
+      bar.position.set(sx(p.x + v.x * (PLATE / 2 + 0.6) + l.x * lane), 0.45, sz(p.y + v.y * (PLATE / 2 + 0.6) + l.y * lane));
       bar.rotation.y = yawOf(v.x, v.y);
-      city.add(bar);
-      row[d] = { red, green, bar };
+      // Green: arrow inside the junction, in this approach's lane, pointing the way traffic now flows.
+      const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+      arrow.position.set(sx(p.x + v.x * 4.5 + l.x * lane), 0.5, sz(p.y + v.y * 4.5 + l.y * lane));
+      arrow.rotation.y = yawOf(h.x, h.y);
+      arrow.visible = false;
+      city.add(bar, arrow);
+      row[d] = { red, green, bar, arrow, halo };
     }
     signals.push(row);
+  }
+
+  // ---------------- Route preview (ambulance planner) ----------------
+  const routeGroup = new THREE.Group(), targetGroup = new THREE.Group();
+  city.add(routeGroup, targetGroup);
+  const routeMat = glowMat(C.route, { transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
+  const routeDim = glowMat(C.route, { transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+  const targetMat = glowMat(0xffffff, { transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  const segGeo = new THREE.BoxGeometry(1, 0.3, 4), nodeGeo = new THREE.CylinderGeometry(4.5, 4.5, 0.4, 24);
+  const tipGeo = arrowGeometry(16, 14);
+  const ringGeo = new THREE.RingGeometry(9, 12, 36); ringGeo.rotateX(-Math.PI / 2);
+  let routeKey = '', targetKey = '';
+  const clearGroup = gr => { while (gr.children.length) gr.remove(gr.children[0]); };
+  /** pts: world-metre polyline, or null. dim: drawn fainter (while the ambulance drives). */
+  function setRoute(pts, { dim = false } = {}) {
+    const key = pts && pts.length > 1 ? JSON.stringify(pts) + dim : '';
+    if (key === routeKey) return;
+    routeKey = key; clearGroup(routeGroup);
+    if (!key) return;
+    const m = dim ? routeDim : routeMat;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], len = Math.hypot(b.x - a.x, b.y - a.y);
+      const seg = new THREE.Mesh(segGeo, m);
+      seg.scale.x = len; seg.position.set(sx((a.x + b.x) / 2), 0.9, sz((a.y + b.y) / 2)); seg.rotation.y = yawOf(b.x - a.x, b.y - a.y);
+      routeGroup.add(seg);
+      if (i < pts.length - 1) { const n = new THREE.Mesh(nodeGeo, m); n.position.set(sx(b.x), 1, sz(b.y)); routeGroup.add(n); }
+    }
+    const end = pts[pts.length - 1], prev = pts[pts.length - 2];
+    const tip = new THREE.Mesh(tipGeo, m);
+    tip.position.set(sx(end.x), 1.1, sz(end.y)); tip.rotation.y = yawOf(end.x - prev.x, end.y - prev.y);
+    routeGroup.add(tip);
+  }
+  /** pts: clickable planner targets (world metres), or null. They pulse in draw(). */
+  function setTargets(pts) {
+    const key = pts && pts.length ? JSON.stringify(pts) : '';
+    if (key === targetKey) return;
+    targetKey = key; clearGroup(targetGroup);
+    for (const t of pts || []) { const r = new THREE.Mesh(ringGeo, targetMat); r.position.set(sx(t.x), 1.2, sz(t.y)); targetGroup.add(r); }
   }
 
   // ---------------- Static: links (overhead) ----------------
@@ -292,13 +364,18 @@ export function createScene3D(canvas) {
   function setOrientation(yaw) { city.rotation.y = yaw; city.updateMatrixWorld(true); yaws.clear(); ambPrev = null; resetView(); }
 
   const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -LINK_Y), hit = new THREE.Vector3();
-  function toWorld(clientX, clientY) {
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  function pick(clientX, clientY, pl) {
     const r = canvas.getBoundingClientRect();
     ray.setFromCamera({ x: ((clientX - r.left) / r.width) * 2 - 1, y: -((clientY - r.top) / r.height) * 2 + 1 }, camera);
-    if (!ray.ray.intersectPlane(plane, hit)) return { x: -1e9, y: -1e9 };
+    if (!ray.ray.intersectPlane(pl, hit)) return { x: -1e9, y: -1e9 };
     const local = city.worldToLocal(hit.clone());
     return { x: local.x + H, y: local.z + H };
   }
+  /** Mouse -> world metres on the overhead link layer (for link clicks). */
+  const toWorld = (clientX, clientY) => pick(clientX, clientY, plane);
+  /** Mouse -> world metres on the road surface (for route planning). */
+  const toGround = (clientX, clientY) => pick(clientX, clientY, groundPlane);
 
   // ---------------- Per-frame draw ----------------
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
@@ -323,12 +400,17 @@ export function createScene3D(canvas) {
         const sig = signals[j.id][d], lit = j.lights === PHASE_OF[d];
         sig.green.material = lit ? lamp.greenOn : lamp.greenOff;
         sig.red.material = lit ? lamp.redOff : lamp.redOn;
-        sig.bar.material = lit ? barMat.go : barMat.stop;
+        sig.halo.material = lit ? halos.go : halos.stop;
+        sig.halo.position.y = lit ? GREEN_Y : RED_Y;
+        sig.bar.visible = !lit; sig.arrow.visible = lit;
       }
       const o = orphans[j.id], pulse = reducedMotion ? 1 : 0.5 + 0.5 * Math.sin(time / 300);
       o.ring.visible = o.label.visible = !!j.orphaned;
       if (j.orphaned) o.ring.material.opacity = 0.3 + 0.7 * pulse;
     }
+
+    // Planner targets pulse so the presenter can see where to click.
+    if (targetGroup.children.length) targetMat.opacity = reducedMotion ? 0.8 : 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(time / 220));
 
     // Links.
     for (const l of s.links) {
@@ -394,7 +476,7 @@ export function createScene3D(canvas) {
 
   setCity(1);
   return {
-    resize, draw, toWorld, setOrientation, setCity, getView, setView, resetView,
+    resize, draw, toWorld, toGround, setOrientation, setCity, getView, setView, resetView, setRoute, setTargets,
     /** Called with the new view whenever the user moves this camera (used to keep panels in sync). */
     onViewChange(cb) { onView = cb; },
     get pxPerMetre() { return pxPerM; },

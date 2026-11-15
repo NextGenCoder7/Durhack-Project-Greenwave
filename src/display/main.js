@@ -10,6 +10,7 @@ import { createScene3D } from './scene3d.js';
 import { mulberry32 } from '../world/rng.js';
 import { AMBULANCE, randomAmbulanceTrip } from '../world/schedule.js';
 import { renderScoreboard, renderStatStrips } from './scoreboard.js';
+import { createPlanner } from './route-planner.js';
 
 const MAX_FRAME_S = 0.25;             // cap real time per sim step (hidden tab, slow laptop)
 const SUB_S = 0.1;                    // world.tick limit
@@ -23,15 +24,19 @@ const PANEL_DEFS = [
 ];
 
 const params = new URLSearchParams(location.search);
-// ?seed=N pins traffic, city and orientation (and keeps the rehearsed default ambulance route).
-// Without it, every load and every Reset draws a fresh seed, and each ambulance takes a random route.
+// ?seed=N pins traffic, city and orientation, and preloads the rehearsed ambulance route as the planned route.
+// Without it, every load and every Reset draws a fresh seed. The ambulance route is chosen in the setup card
+// before each run: Random (a new route per dispatch) or planned by clicking on the map.
 const pinnedSeed = Number(params.get('seed')) || null;
 const use2d = params.get('2d') === '1';
 const randomSeed = () => 1 + Math.floor(Math.random() * 99999);
 let seed = pinnedSeed ?? randomSeed();
 const $ = id => document.getElementById(id);
 
-const ui = { view: 'grid', focus: 2, showMessages: false, messagesOn: true, speed: 3 };
+const ui = { view: 'grid', focus: 2, showMessages: false, messagesOn: true, speed: 3, setup: true, routeMode: pinnedSeed ? 'custom' : 'random' };
+const planner = createPlanner();
+if (pinnedSeed) planner.load(AMBULANCE);
+let activeTrip = null;                // the trip of the ambulance currently (or last) dispatched
 let panels = [];
 let arrivals = [];                    // this ambulance's arrivals so far, in arrival order
 let prevAmb = null;                   // last frame's ambulance states, for arrival toasts
@@ -48,6 +53,29 @@ function build() {
   pending = [];
   last = performance.now();
   ui.messagesOn = true;
+  activeTrip = null;
+  enterSetup();
+}
+
+// ---------------- Setup: choose the ambulance route, then start ----------------
+function enterSetup() { ui.setup = true; renderSetup(); }
+function setRouteMode(mode) { ui.routeMode = mode; renderSetup(); }
+function renderSetup() {
+  document.body.classList.toggle('setup', ui.setup);
+  for (const b of document.querySelectorAll('[data-route]')) b.classList.toggle('active', b.dataset.route === ui.routeMode);
+  const custom = ui.routeMode === 'custom';
+  $('setup-status').textContent = custom
+    ? planner.describe()
+    : 'Each ambulance takes a new random route across the city';
+  $('setup-edit').hidden = !custom;
+  $('btn-start').disabled = custom && !planner.started;
+  $('dispatch-mode').textContent = custom ? 'planned route' : 'random route';
+}
+
+/** The trip for the next dispatch, per the chosen mode. */
+function nextTrip() {
+  if (ui.routeMode === 'custom' && planner.started) return planner.trip();
+  return randomAmbulanceTrip(mulberry32(Math.floor(Math.random() * 2 ** 32)));
 }
 
 /** Queue a command; it runs on every panel's world at the start of the next sim step. */
@@ -57,12 +85,27 @@ const broadcast = fn => pending.push(fn);
 const actions = {
   failCentral() { broadcast(w => w.failCentral()); toast('Central controller failed', 'stop'); },
   spawnAmbulance() {
+    if (ui.setup) { toast('Start the simulation first (Enter)', 'data'); return; }
     if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) { toast('Ambulance already en route', 'data'); return; }
-    const trip = pinnedSeed ? AMBULANCE : randomAmbulanceTrip(mulberry32(Math.floor(Math.random() * 2 ** 32)));
+    const trip = nextTrip();
+    activeTrip = trip;
     broadcast(w => w.spawnAmbulance(trip));
     arrivals = [];
-    toast('Ambulance dispatched', 'data');
+    toast(`Ambulance dispatched (${ui.routeMode === 'custom' ? 'planned' : 'random'} route)`, 'data');
   },
+  start() {
+    if (!ui.setup) return;
+    if (ui.routeMode === 'custom') {
+      if (!planner.started) { toast('Click the road where the ambulance enters first', 'data'); return; }
+      if (!planner.done) toast('Route continues straight on to the edge', 'data');
+    }
+    ui.setup = false; last = performance.now(); renderSetup();
+    toast('Simulation started — press A to dispatch the ambulance', 'go');
+  },
+  routeRandom() { setRouteMode('random'); },
+  routeCustom() { setRouteMode('custom'); },
+  routeUndo() { planner.undo(); renderSetup(); },
+  routeClear() { planner.clear(); renderSetup(); },
   cutAll() { broadcast(w => w.cutAll()); toast('All links cut', 'stop'); },
   restoreAll() { broadcast(w => w.restoreAll()); toast('All links restored', 'go'); },
   toggleMessages() {
@@ -115,6 +158,8 @@ document.addEventListener('keydown', e => {
   if (document.activeElement?.matches('input, select, textarea')) return;
   const k = e.key.toLowerCase();
   if (k === 'r' && e.shiftKey) { actions.reset(); e.preventDefault(); return; }
+  if (ui.setup && e.key === 'Enter') { actions.start(); e.preventDefault(); return; }
+  if (ui.setup && ui.routeMode === 'custom' && e.key === 'Backspace') { actions.routeUndo(); e.preventDefault(); return; }
   if (['1', '2', '3'].includes(e.key)) { actions.setFocus(Number(e.key) - 1); e.preventDefault(); return; }
   if (KEYS[k] && !e.shiftKey) { actions[KEYS[k]](); e.preventDefault(); }
 });
@@ -122,6 +167,7 @@ document.addEventListener('keydown', e => {
 // ---------------- Simulation loop (timer-driven, independent of frame rate) ----------------
 function simStep() {
   const now = performance.now();
+  if (ui.setup) { last = now; return; }                // paused until the presenter presses Start
   let sim = Math.min((now - last) / 1000, MAX_FRAME_S) * ui.speed;
   last = now;
   for (const fn of pending) for (const p of panels) fn(p.world, p);
@@ -183,18 +229,30 @@ for (const map of allMaps) {
   map.renderer.onViewChange?.(view => { for (const m of allMaps) if (m !== map) m.renderer.setView(view); });
 }
 
+/** Map clicks plan the ambulance route (instead of cutting links) during setup in "choose on map" mode. */
+const planning = () => ui.setup && ui.routeMode === 'custom';
+
 const DRAG_PX = 5;                   // a press that moves further than this is a camera drag, not a link click
 for (const map of allMaps) {
   let down = null;
   map.canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
   const wasDrag = e => down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_PX;
   map.canvas.addEventListener('mousemove', e => {
+    if (planning()) { hover = null; map.canvas.style.cursor = 'crosshair'; return; }
     const link = linkUnder(map, e);
     hover = link ? { canvas: map.canvas, link } : null;
     map.canvas.style.cursor = link ? 'pointer' : 'default';
   });
   map.canvas.addEventListener('mouseleave', () => { if (hover?.canvas === map.canvas) hover = null; });
-  map.canvas.addEventListener('click', e => { if (wasDrag(e)) return; const link = linkUnder(map, e); if (link) cutOrRestore(link); });
+  map.canvas.addEventListener('click', e => {
+    if (wasDrag(e)) return;
+    if (planning()) {
+      const { x, y } = (map.renderer.toGround ?? map.renderer.toWorld)(e.clientX, e.clientY);
+      if (planner.click(x, y)) renderSetup();
+      return;
+    }
+    const link = linkUnder(map, e); if (link) cutOrRestore(link);
+  });
   map.canvas.addEventListener('contextmenu', e => e.preventDefault());   // right drag pans
   new ResizeObserver(() => map.renderer.resize()).observe(map.canvas.parentElement);
 }
@@ -216,6 +274,11 @@ function frame(time) {
     toast(`Ambulance arrived: ${arrivals.join(' · ')}`, 'go');
   }
   prevAmb = nowAmb;
+  // Route overlay: the route being planned (with clickable targets), or the dispatched ambulance's route, dimmed.
+  const driving = nowAmb.some(a => a.state === 'driving');
+  const routePts = planning() ? planner.path() : driving && activeTrip ? planner.path(activeTrip) : null;
+  const targets = planning() ? planner.targets() : null;
+  for (const m of allMaps) { m.renderer.setRoute?.(routePts, { dim: !planning() }); m.renderer.setTargets?.(targets); }
   if (ui.view === 'grid') {
     for (const m of gridMaps) drawMap(m, time);
     renderStatStrips(strips, lastSnaps);

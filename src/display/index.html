@@ -43,6 +43,7 @@
   <div class="group"><span class="title">Incidents</span>
     <button data-action="failCentral">Fail central<kbd>F</kbd></button>
     <button data-action="spawnAmbulance">Spawn ambulance<kbd>A</kbd></button>
+    <span class="hint" id="dispatch-mode"></span>
   </div>
   <div class="group"><span class="title">Network</span>
     <button data-action="cutAll">Cut all links<kbd>C</kbd></button>
@@ -59,6 +60,24 @@
     <button data-action="reset">Reset<kbd>Shift+R</kbd></button>
   </div>
 </footer>
+
+<div id="setup" role="dialog" aria-label="Ambulance route setup">
+  <div class="setup-head">
+    <span class="title">Ambulance route</span>
+    <div class="seg">
+      <button data-route="random" data-action="routeRandom">Random</button>
+      <button data-route="custom" data-action="routeCustom">Choose on map</button>
+    </div>
+  </div>
+  <p id="setup-status"></p>
+  <div class="setup-foot">
+    <span id="setup-edit">
+      <button data-action="routeUndo">Undo<kbd>⌫</kbd></button>
+      <button data-action="routeClear">Clear</button>
+    </span>
+    <button id="btn-start" data-action="start" class="primary">Start simulation<kbd>Enter</kbd></button>
+  </div>
+</div>
 
 <div id="toasts" aria-live="polite"></div>
 <script type="module" src="./main.js"></script>

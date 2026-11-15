@@ -67,3 +67,9 @@ test('snapshot shape', () => {
   assert.ok(s.cars.length > 0); assert.ok('x' in s.cars[0] && 'isAmbulance' in s.cars[0]);
   assert.ok('conflicts' in s.metrics);
 });
+
+test('snapshot cars carry their id', () => {
+  const s = run(42, createFixed, 60).snapshot();
+  assert.ok(s.cars.length > 0);
+  for (const c of s.cars) assert.notEqual(c.id, undefined);
+});

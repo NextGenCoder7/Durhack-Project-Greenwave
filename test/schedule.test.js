@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSchedule, entryJunction, AMBULANCE } from '../src/world/schedule.js';
+import { buildSchedule, entryJunction, AMBULANCE, randomAmbulanceTrip } from '../src/world/schedule.js';
+import { mulberry32 } from '../src/world/rng.js';
 import { neighbour, opposite } from '../src/world/grid.js';
 
 function checkRoute(entry, route) {
@@ -26,4 +27,12 @@ test('sorted by time', () => {
 test('rate roughly matches', () => {
   const n = buildSchedule(1, { duration: 1200, rate: 1 / 12 }).length;
   assert.ok(n > 1200 / 12 * 16 * 0.8 && n < 1200 / 12 * 16 * 1.2, `n=${n}`);
+});
+test('random ambulance trips are valid, cross >= 4 junctions, and are deterministic per rng seed', () => {
+  for (let seed = 1; seed <= 200; seed++) {
+    const t = randomAmbulanceTrip(mulberry32(seed));
+    checkRoute(t.entry, t.route);
+    assert.ok(t.route.length >= 4, `seed ${seed}: ${t.route.length}`);
+    assert.deepEqual(t, randomAmbulanceTrip(mulberry32(seed)));
+  }
 });

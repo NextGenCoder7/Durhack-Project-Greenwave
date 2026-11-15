@@ -6,6 +6,9 @@ import { createGreenwaveWorkers } from '../controllers/greenwave-workers.js';
 import { canSpawnAmbulance, linkAt, detectEvents } from './demo-rules.js';
 import { showToast } from './toasts.js';
 import { createMapRenderer } from './map-renderer.js';
+import { createScene3D } from './scene3d.js';
+import { mulberry32 } from '../world/rng.js';
+import { AMBULANCE, randomAmbulanceTrip } from '../world/schedule.js';
 import { renderScoreboard, renderStatStrips } from './scoreboard.js';
 
 const MAX_FRAME_S = 0.25;             // cap real time per sim step (hidden tab, slow laptop)
@@ -20,7 +23,12 @@ const PANEL_DEFS = [
 ];
 
 const params = new URLSearchParams(location.search);
-const seed = Number(params.get('seed')) || 42;
+// ?seed=N pins traffic, city and orientation (and keeps the rehearsed default ambulance route).
+// Without it, every load and every Reset draws a fresh seed, and each ambulance takes a random route.
+const pinnedSeed = Number(params.get('seed')) || null;
+const use2d = params.get('2d') === '1';
+const randomSeed = () => 1 + Math.floor(Math.random() * 99999);
+let seed = pinnedSeed ?? randomSeed();
 const $ = id => document.getElementById(id);
 
 const ui = { view: 'grid', focus: 2, showMessages: false, messagesOn: true, speed: 3 };
@@ -33,6 +41,9 @@ let last = performance.now();
 
 function build() {
   for (const p of panels) p.ctrl.terminate?.();
+  seed = pinnedSeed ?? randomSeed();
+  const yaw = mulberry32(seed * 7919 + 1)() * Math.PI * 2;
+  for (const m of allMaps) { m.renderer.setCity?.(seed); m.renderer.setOrientation?.(yaw); }
   panels = PANEL_DEFS.map(d => ({ key: d.key, label: d.label, ctrl: d.make(ui.speed), world: createWorld({ seed }) }));
   pending = [];
   last = performance.now();
@@ -47,7 +58,8 @@ const actions = {
   failCentral() { broadcast(w => w.failCentral()); toast('Central controller failed', 'stop'); },
   spawnAmbulance() {
     if (!canSpawnAmbulance(panels.map(p => p.world.snapshot()))) { toast('Ambulance already en route', 'data'); return; }
-    broadcast(w => w.spawnAmbulance());
+    const trip = pinnedSeed ? AMBULANCE : randomAmbulanceTrip(mulberry32(Math.floor(Math.random() * 2 ** 32)));
+    broadcast(w => w.spawnAmbulance(trip));
     arrivals = [];
     toast('Ambulance dispatched', 'data');
   },
@@ -130,6 +142,7 @@ function setPill(el, text, cls) {
 function updateHeader(snaps) {
   $('clock').textContent = `t = ${snaps[0].t.toFixed(1)} s`;
   $('speed-label').textContent = `${ui.speed}×`;
+  $('seed-label').textContent = `seed ${seed}`;
   const failed = snaps[0].centralFailed;
   setPill($('pill-central'), failed ? 'CENTRAL: FAILED' : 'CENTRAL: ONLINE', failed ? 'bad' : '');
   const cut = snaps[0].links.filter(l => !l.up).length;
@@ -148,9 +161,11 @@ const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 let reducedMotion = reducedMotionQuery.matches;
 reducedMotionQuery.addEventListener('change', e => { reducedMotion = e.matches; });
 
-const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas, i) => ({ canvas, renderer: createMapRenderer(canvas), panelIndex: () => i }));
+// 3D by default; the 2D control-room renderer is the fallback (?2d=1, or no WebGL).
+const makeRenderer = canvas => (!use2d && createScene3D(canvas)) || createMapRenderer(canvas);
+const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas, i) => ({ canvas, renderer: makeRenderer(canvas), panelIndex: () => i }));
 const focusCanvas = document.getElementById('focus-canvas');
-const focusMap = { canvas: focusCanvas, renderer: createMapRenderer(focusCanvas), panelIndex: () => ui.focus };
+const focusMap = { canvas: focusCanvas, renderer: makeRenderer(focusCanvas), panelIndex: () => ui.focus };
 const allMaps = [...gridMaps, focusMap];
 const strips = [...document.querySelectorAll('#grid-view .stat-strip')];
 let lastSnaps = [];

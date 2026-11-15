@@ -4,6 +4,8 @@ import { createWorld } from '../src/world/world.js';
 import { runHeadless } from '../src/world/run.js';
 import { createFixed } from '../src/controllers/fixed.js';
 import { createGreenwaveLockstep } from '../src/controllers/greenwave-lockstep.js';
+import { randomAmbulanceTrip } from '../src/world/schedule.js';
+import { mulberry32 } from '../src/world/rng.js';
 
 const amb = (makeCtrl, seed, cutAll) => {
   const w = createWorld({ seed }), c = makeCtrl();
@@ -87,4 +89,15 @@ test('a second ambulance also gets a PRIORITY corridor', () => {
   assert.equal(w.metrics().ambulance.state, 'arrived');
   assert.ok(first > 0, 'first ambulance has a corridor');
   assert.ok(second > 0, 'second ambulance has a corridor');
+});
+
+test('custom ambulance trips arrive under fixed and greenwave', () => {
+  for (let seed = 1; seed <= 6; seed++) {
+    const trip = randomAmbulanceTrip(mulberry32(seed));
+    for (const mk of [createFixed, createGreenwaveLockstep]) {
+      const w = createWorld({ seed }), c = mk();
+      runHeadless(w, c, 60); w.spawnAmbulance(trip); runHeadless(w, c, 400);
+      assert.equal(w.metrics().ambulance.state, 'arrived', `seed ${seed}`);
+    }
+  }
 });

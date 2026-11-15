@@ -68,13 +68,13 @@ export function createWorld({ seed, schedule, rate } = {}) {
     },
 
     /** Spawn the ambulance at the current time. Ignored while one is already driving. */
-    spawnAmbulance() {
+    spawnAmbulance(trip = AMBULANCE) {
       if (amb && amb.state === 'driving') return;
-      const j = entryJunction(AMBULANCE.entry), d = AMBULANCE.entry.side;
+      const j = entryJunction(trip.entry), d = trip.entry.side;
       const target = seg(j, d);
       const last = target[target.length - 1];
       const id = `amb-${++ambCount}`;
-      const car = { id, isAmbulance: true, route: AMBULANCE.route, hop: 0, j, d, dist: last ? Math.max(STUB, last.dist + GAP) : STUB, v: VMAX, waited: 0, spawnT: world.now, inBox: false };
+      const car = { id, isAmbulance: true, route: trip.route.slice(), hop: 0, j, d, dist: last ? Math.max(STUB, last.dist + GAP) : STUB, v: VMAX, waited: 0, spawnT: world.now, inBox: false };
       target.push(car);
       amb = { car, state: 'driving', spawnT: world.now, journey: 0, stopped: 0, messaged: [] };
     },
@@ -250,7 +250,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
           const h = opposite(d);
           for (const c of seg(j, d)) {
             const pt = laneOf(p, d, h, BOX_HALF + c.dist * ROAD_DRAW_SCALE);
-            cars.push({ x: r2(pt.x), y: r2(pt.y), heading: h, isAmbulance: c.isAmbulance, stopped: c.v < 1 });
+            cars.push({ id: c.id, x: r2(pt.x), y: r2(pt.y), heading: h, isAmbulance: c.isAmbulance, stopped: c.v < 1 });
           }
         }
         for (const b of boxes[j]) {
@@ -267,7 +267,7 @@ export function createWorld({ seed, schedule, rate } = {}) {
             x = u * u * a.x + 2 * u * f * cx + f * f * z.x;
             y = u * u * a.y + 2 * u * f * cy + f * f * z.y;
           }
-          cars.push({ x: r2(x), y: r2(y), heading: b.exit, isAmbulance: b.car.isAmbulance, stopped: false });
+          cars.push({ id: b.car.id, x: r2(x), y: r2(y), heading: b.exit, isAmbulance: b.car.isAmbulance, stopped: false });
         }
       }
       const m = world.metrics();

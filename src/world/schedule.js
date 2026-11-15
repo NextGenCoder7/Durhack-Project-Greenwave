@@ -11,7 +11,7 @@ export function entryJunction({ side, index }) {
 
 export const AMBULANCE = { entry: { side: 'W', index: 1 }, route: ['E', 'E', 'S', 'E', 'E'] };
 
-function makeRoute(rng, entry) {
+export function makeRoute(rng, entry) {
   let j = entryJunction(entry), heading = opposite(entry.side);
   const route = [];
   while (true) {
@@ -25,6 +25,15 @@ function makeRoute(rng, entry) {
     const next = neighbour(j, exit);
     if (next === null) return route;
     j = next; heading = exit;
+  }
+}
+
+/** Random ambulance trip: random entry, route crossing at least `minHops` junctions. */
+export function randomAmbulanceTrip(rng, { minHops = 4 } = {}) {
+  for (let tries = 0; ; tries++) {
+    const entry = { side: DIRS[Math.floor(rng() * 4)], index: Math.floor(rng() * N) };
+    const route = makeRoute(rng, entry);
+    if (route.length >= minHops || tries > 50) return { entry, route };
   }
 }
 

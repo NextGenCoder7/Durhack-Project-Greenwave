@@ -5,12 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Greenwave</title>
 <link rel="stylesheet" href="./styles.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body class="view-grid">
 <header>
   <div class="wordmark">Green<span>wave</span></div>
   <div class="clock" id="clock">t = 0.0 s</div>
   <div class="clock" id="speed-label">3×</div>
+  <div class="clock" id="seed-label" title="Replay this run with ?seed=N"></div>
   <div class="spacer"></div>
   <div class="pill" id="pill-central">CENTRAL: ONLINE</div>
   <div class="pill" id="pill-links">LINKS CUT: 0/24</div>

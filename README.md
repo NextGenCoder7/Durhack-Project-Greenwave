@@ -1,20 +1,69 @@
-# Durhack-Project-Greenwave
-Website: https://nextgencoder7.github.io/Durhack-Project-Greenwave/
+# Greenwave
 
-We are building a project called Greenwave for DurHack 2026. It is a browser-based simulation of a city’s traffic signals in which every junction makes its own decisions and talks only to its immediate neighbours. There is no central controller, so the system keeps working when links between junctions fail.
+**Traffic lights with no central brain.** Greenwave is a browser-based 3D simulation of a city in which every junction runs its own traffic lights and talks only to its immediate neighbours. Because there is no central controller, nothing central can fail, and the city keeps moving when links between junctions are cut.
 
-Real-world problem: City signals rely on a central system. When it or its network fails, junctions fall back to fixed timers, traffic backs up, and ambulances lose time at red lights.
+Built at DurHack 2026 for the Neptune North challenge: design systems that work together in a distributed way, even when communications are interrupted, with no central hub giving instructions.
 
-Sponsor challenge: 
-Neptune North - design systems that work together in a distributed way, even when communications are interrupted, with no central hub giving instructions.
+**Live demo:** https://nextgencoder7.github.io/Durhack-Project-Greenwave/
 
-Theme (Composition): City-wide traffic flow is composed from many small local decisions, like an orchestra with no conductor.
+## The problem
 
-How it works:
-A grid of junctions (start with 4×4) with cars spawning at the edges and driving routes through it.
-Each junction is an independent agent with its own state. It may only read its own sensors (the queue length on each approach) and messages from adjacent junctions. No shared global state. 
-Junctions tell neighbours what is coming: “a group of cars reaches you in 12 seconds”. 
-Neighbours time their greens to match, which forms green waves.
-An ambulance sends a priority request that passes hop by hop ahead of it, clearing a green corridor.
-I can click any link to cut it, or cut all of them. A cut-off junction falls back to its own queue sensors and to “hearing” a siren within a short radius.
-One safety rule is enforced locally at all times: a junction never shows two conflicting greens.
+City traffic signals usually depend on a central system. When it or its network fails, junctions fall back to fixed timers, traffic backs up, and emergency vehicles lose time at red lights.
+
+## How it works
+
+- **Independent junctions.** Each junction only knows its own sensors (the queue on each approach) and messages from adjacent junctions. There is no shared state.
+- **Green waves.** Junctions tell their neighbours what is coming ("a group of cars reaches you in 12 seconds"), and the neighbours time their greens to match.
+- **Emergency corridors.** An emergency vehicle's priority request passes hop by hop ahead of it, clearing a green corridor.
+- **Resilience.** Cut any link, or all of them. A cut-off junction falls back to its own sensors and to hearing a siren within a short radius.
+- **Safety.** Every junction enforces one rule locally at all times: it never shows two conflicting greens.
+
+The demo runs three cities side by side on the same traffic: **Central** (one controller that sees everything), **Fixed** (what happens when the central system fails) and **Greenwave**.
+
+## Running it
+
+You need Node.js 18 or later. There are no dependencies to install.
+
+```sh
+npm run serve   # http://localhost:8080
+npm test        # run the test suite
+```
+
+The server only listens on localhost. To present from another device, set `HOST=0.0.0.0`.
+
+URL options:
+
+| Option    | Effect                                                     |
+|-----------|------------------------------------------------------------|
+| `?seed=42` | Fixes the traffic, city layout and emergency-vehicle route |
+| `?2d=1`    | Uses the flat 2D map instead of the 3D view                |
+
+## Controls
+
+Choose the emergency vehicle's route on the setup card, then press **Enter** to start.
+
+| Key | Action | Key | Action |
+|-----|--------|-----|--------|
+| `A` | Dispatch an emergency vehicle | `M` | Turn Greenwave messages on or off |
+| `F` | Fail the central system | `O` | Show or hide messages |
+| `C` | Cut all links | `V` | Switch between grid and focus view |
+| `R` | Restore all links | `1` `2` `3` | Focus a city |
+| `G` | Follow the emergency vehicle | `[` `]` | Slow down / speed up |
+| `H` | Recentre the camera | `Shift`+`R` | Reset |
+
+Click any link on the map to cut it.
+
+## Project layout
+
+```
+src/brain/        junction decision logic and safety state machine
+src/controllers/  Greenwave, central and fixed-timer controllers
+src/worker/       Web Worker host: one worker per junction
+src/world/        seeded traffic simulation
+src/display/      3D/2D view, setup card and scoreboard (three.js)
+test/             node --test suite
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

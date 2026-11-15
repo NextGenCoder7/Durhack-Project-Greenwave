@@ -83,6 +83,9 @@ button {
 button:hover { border-color: var(--data); }
 button:focus-visible, select:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
 button.on { border-color: var(--go); color: var(--go); }
+/* Locked controls (everything outside the setup card while the route is being chosen). */
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+button:disabled:hover { border-color: var(--border); }
 button.off { border-color: var(--stop); color: var(--stop); }
 
 /* ---------- Views ---------- */
@@ -104,6 +107,7 @@ body.view-grid #focus-view, body.view-focus #grid-view { display: none; }
 .map-panel h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 0.03em; }
 .map-panel.greenwave h2 { color: var(--go); }
 .map-box { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.map-box canvas[hidden] { display: none !important; }
 .map-box canvas { display: block; aspect-ratio: 1; max-width: 100%; max-height: 100%; width: 100%; height: auto; }
 
 /* Map column only as wide as the (square) map can be; the scoreboard gets the rest. */
@@ -205,6 +209,7 @@ body.view-focus #setup, body.view-focus #finish { left: auto; right: 18px; trans
 button.primary { border-color: var(--go); color: var(--bg); background: var(--go); font-weight: 600; margin-left: auto; }
 button.primary kbd { color: var(--bg); border-color: rgba(11, 18, 32, 0.4); }
 button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary:disabled:hover { border-color: var(--go); }
 
 /* ---------- "?" explainers ---------- */
 .map-panel { position: relative; }

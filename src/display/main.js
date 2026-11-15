@@ -65,7 +65,7 @@ function build() {
   for (const p of panels) p.ctrl.terminate?.();
   seed = pinnedSeed ?? randomSeed();
   const yaw = mulberry32(seed * 7919 + 1)() * Math.PI * 2;
-  for (const m of allMaps) { m.renderer.setCity?.(seed); m.renderer.setOrientation?.(yaw); }
+  for (const m of allMaps) for (const r of m.renderers) { r.setCity?.(seed); r.setOrientation?.(yaw); }
   panels = PANEL_DEFS.map(d => ({ key: d.key, label: d.label, ctrl: d.make(ui.speed), world: createWorld({ seed }) }));
   pending = [];
   last = performance.now();
@@ -94,11 +94,11 @@ function hideFinish() { ui.finished = false; document.body.classList.remove('fin
 // ---------------- 3D camera: recentre and ambulance view ----------------
 function setFollow(on) {
   ui.follow = on;
-  for (const m of allMaps) m.renderer.setFollow?.(on);
+  for (const m of allMaps) for (const r of m.renderers) r.setFollow?.(on);
 }
 
 // ---------------- Setup: choose the ambulance route, then start ----------------
-function enterSetup() { ui.setup = true; renderSetup(); }
+function enterSetup() { ui.setup = true; hideHelp(); renderSetup(); }
 function setRouteMode(mode) { ui.routeMode = mode; renderSetup(); }
 function renderSetup() {
   document.body.classList.toggle('setup', ui.setup);
@@ -110,6 +110,8 @@ function renderSetup() {
   $('setup-edit').hidden = !custom;
   $('btn-start').disabled = custom && !planner.started;
   $('dispatch-mode').textContent = custom ? 'planned route' : 'random route';
+  // While the route is being chosen, the setup card is the only thing that can be pressed.
+  for (const b of document.querySelectorAll('button')) if (!$('setup').contains(b) && !$('finish').contains(b)) b.disabled = ui.setup;
 }
 
 /** The trip for the next dispatch, per the chosen mode. */
@@ -132,7 +134,7 @@ const actions = {
     activeTrip = trip;
     broadcast(w => w.spawnAmbulance(trip));
     const v = VEHICLES[Math.floor(Math.random() * VEHICLES.length)];   // looks only: same physics for all three
-    for (const m of allMaps) m.renderer.setVehicleKind?.(v.kind);
+    for (const m of allMaps) for (const r of m.renderers) r.setVehicleKind?.(v.kind);
     arrivals = [];
     toast(`Em-vehicle dispatched: ${v.name} (${ui.routeMode === 'custom' ? 'planned' : 'random'} route)`, 'data');
   },
@@ -149,9 +151,10 @@ const actions = {
   dismissFinish() { hideFinish(); },
   recentre() {
     setFollow(false);
-    for (const m of allMaps) m.renderer.resetView?.();
+    for (const m of allMaps) for (const r of m.renderers) r.resetView?.();
   },
   toggleFollow() {
+    if (ui.render !== '3d') { toast('Em-vehicle view is a 3D camera: switch to 3D first (D)', 'data'); return; }
     setFollow(!ui.follow);
     if (ui.follow && !lastSnaps.some(s => s.metrics.ambulance.state === 'driving')) toast('Em-vehicle view: follows the next em-vehicle you dispatch (A)', 'data');
     else toast(`Em-vehicle view ${ui.follow ? 'on' : 'off'}`, 'data');
@@ -170,6 +173,11 @@ const actions = {
   },
   toggleShowMessages() { ui.showMessages = !ui.showMessages; },
   toggleView() { setView(ui.view === 'grid' ? 'focus' : 'grid'); },
+  toggleRender() {
+    if (!has3d) { toast('3D view needs WebGL, which this browser does not offer', 'data'); return; }
+    setRender(ui.render === '3d' ? '2d' : '3d');
+    toast(`${ui.render.toUpperCase()} view`, 'data');
+  },
   setFocus(i) { ui.focus = i; hideHelp(); setView('focus'); },
   speedDown() { setSpeed(SPEEDS[Math.max(0, SPEEDS.indexOf(ui.speed) - 1)]); },
   speedUp() { setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(ui.speed) + 1)]); },
@@ -219,7 +227,7 @@ for (const btn of document.querySelectorAll('.help')) {
     e.stopPropagation();
     if (helpOpen?.btn === btn && helpOpen.pinned) hideHelp(); else showHelp(btn, true);
   });
-  btn.addEventListener('mouseenter', () => { if (!helpOpen?.pinned) showHelp(btn, false); });
+  btn.addEventListener('mouseenter', () => { if (!btn.disabled && !helpOpen?.pinned) showHelp(btn, false); });
   btn.addEventListener('mouseleave', () => { if (helpOpen && !helpOpen.pinned) hideHelp(); });
 }
 document.addEventListener('click', e => { if (helpOpen && !helpPop.contains(e.target)) hideHelp(); });
@@ -237,18 +245,23 @@ for (const b of document.querySelectorAll('[data-focus]')) {
 const KEYS = {
   f: 'failCentral', a: 'spawnAmbulance', c: 'cutAll', r: 'restoreAll',
   m: 'toggleMessages', o: 'toggleShowMessages', v: 'toggleView', '[': 'speedDown', ']': 'speedUp',
-  h: 'recentre', g: 'toggleFollow',
+  h: 'recentre', g: 'toggleFollow', d: 'toggleRender',
 };
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
   if (document.activeElement?.matches('input, select, textarea')) return;
   const k = e.key.toLowerCase();
-  if (k === 'r' && e.shiftKey) { actions.reset(); e.preventDefault(); return; }
+  if (k === 'r' && e.shiftKey && !ui.setup) { actions.reset(); e.preventDefault(); return; }
   if (ui.setup && e.key === 'Enter') { actions.start(); e.preventDefault(); return; }
   if (ui.finished && e.key === 'Enter') { actions.runAgain(); e.preventDefault(); return; }
   if (helpOpen && e.key === 'Escape') { hideHelp(); e.preventDefault(); return; }
   if (ui.finished && e.key === 'Escape') { actions.dismissFinish(); e.preventDefault(); return; }
   if (ui.setup && ui.routeMode === 'custom' && e.key === 'Backspace') { actions.routeUndo(); e.preventDefault(); return; }
+  // While the route is being chosen, every other shortcut (including Shift+R) is locked.
+  if (ui.setup) {
+    if ((KEYS[k] || ['1', '2', '3'].includes(e.key)) && !e.shiftKey || (k === 'r' && e.shiftKey)) toast('Choose the em-vehicle route first, then press Enter', 'data');
+    return;
+  }
   if (['1', '2', '3'].includes(e.key)) { actions.setFocus(Number(e.key) - 1); e.preventDefault(); return; }
   if (KEYS[k] && !e.shiftKey) { actions[KEYS[k]](); e.preventDefault(); }
 });
@@ -302,15 +315,44 @@ const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 let reducedMotion = reducedMotionQuery.matches;
 reducedMotionQuery.addEventListener('change', e => { reducedMotion = e.matches; });
 
-// 3D by default; the 2D control-room renderer is the fallback (?2d=1, or no WebGL).
-const makeRenderer = canvas => (!use2d && createScene3D(canvas)) || createMapRenderer(canvas);
-const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas, i) => ({ canvas, renderer: makeRenderer(canvas), panelIndex: () => i }));
-const focusCanvas = document.getElementById('focus-canvas');
-const focusMap = { canvas: focusCanvas, renderer: makeRenderer(focusCanvas), panelIndex: () => ui.focus };
+// Every map box holds a 3D canvas (three.js) and a 2D canvas (flat control-room map); the 2D/3D toggle (D)
+// shows one and hides the other. A canvas can't swap its WebGL context for a 2D one, hence two canvases.
+// 3D is the default; ?2d=1 starts in 2D, and without WebGL only 2D is offered.
+function makeMap(canvas3d, panelIndex) {
+  const canvas2d = document.createElement('canvas');
+  canvas3d.after(canvas2d);
+  const r3 = createScene3D(canvas3d);
+  const modes = { '3d': r3 && { canvas: canvas3d, renderer: r3 }, '2d': { canvas: canvas2d, renderer: createMapRenderer(canvas2d) } };
+  return {
+    modes, panelIndex,
+    get canvas() { return (modes[ui.render] || modes['2d']).canvas; },
+    get renderer() { return (modes[ui.render] || modes['2d']).renderer; },
+    /** Both renderers: city, orientation, vehicle look and camera resets must reach the hidden one too. */
+    get renderers() { return [modes['3d']?.renderer, modes['2d'].renderer].filter(Boolean); },
+  };
+}
+const gridMaps = [...document.querySelectorAll('#grid-view canvas')].map((canvas, i) => makeMap(canvas, () => i));
+const focusMap = makeMap(document.getElementById('focus-canvas'), () => ui.focus);
 const allMaps = [...gridMaps, focusMap];
-const is3d = allMaps.every(m => m.renderer.setFollow);
-if (!is3d) document.querySelector('.view3d').hidden = true;   // 2D fallback
-document.body.classList.toggle('r3d', is3d);                 // 3D canvases fill their boxes (any shape)
+const has3d = allMaps.every(m => m.modes['3d']);
+ui.render = has3d && !use2d ? '3d' : '2d';
+if (!has3d) $('render-toggle').hidden = true;                // no WebGL: 2D only
+
+function setRender(mode) {
+  if (mode === '3d' && !has3d) return;
+  if (mode === '2d') setFollow(false);
+  ui.render = mode;
+  hover = null;
+  const is3d = mode === '3d';
+  document.querySelector('.view3d').hidden = !is3d;           // Recentre / em-vehicle view are 3D camera controls
+  document.body.classList.toggle('r3d', is3d);               // 3D canvases fill their boxes (any shape)
+  for (const m of allMaps) {
+    m.modes['3d'] && (m.modes['3d'].canvas.hidden = !is3d);
+    m.modes['2d'].canvas.hidden = is3d;
+    m.renderer.resize();
+  }
+  $('render-toggle').firstChild.textContent = is3d ? '2D view' : '3D view';
+}
 const strips = [...document.querySelectorAll('#grid-view .stat-strip')];
 let lastSnaps = [];
 let hover = null;                    // { canvas, link } for the link under the cursor
@@ -325,37 +367,42 @@ function linkUnder(map, e) {
 // Moving one 3D camera moves them all, so the three panels stay directly comparable.
 // Moving the camera yourself leaves em-vehicle view (the button unticks).
 for (const map of allMaps) {
-  map.renderer.onUserMove?.(() => { if (ui.follow) { setFollow(false); toast('Em-vehicle view off', 'data'); } });
-  map.renderer.onViewChange?.(view => { for (const m of allMaps) if (m !== map) m.renderer.setView(view); });
+  const r3 = map.modes['3d']?.renderer;
+  if (!r3) continue;
+  r3.onUserMove(() => { if (ui.follow) { setFollow(false); toast('Em-vehicle view off', 'data'); } });
+  r3.onViewChange(view => { for (const m of allMaps) if (m !== map) m.modes['3d'].renderer.setView(view); });
 }
 
 /** Map clicks plan the ambulance route (instead of cutting links) during setup in "choose on map" mode. */
 const planning = () => ui.setup && ui.routeMode === 'custom';
 
 const DRAG_PX = 5;                   // a press that moves further than this is a camera drag, not a link click
-for (const map of allMaps) {
+// Listeners go on both canvases of each map; only the visible one ever receives events.
+for (const map of allMaps) for (const { canvas, renderer } of Object.values(map.modes).filter(Boolean)) {
   let down = null;
-  map.canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
   const wasDrag = e => down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_PX;
-  map.canvas.addEventListener('mousemove', e => {
-    if (planning()) { hover = null; map.canvas.style.cursor = 'crosshair'; return; }
+  canvas.addEventListener('mousemove', e => {
+    if (planning()) { hover = null; canvas.style.cursor = 'crosshair'; return; }
+    if (ui.setup) { hover = null; canvas.style.cursor = 'default'; return; }   // links can't be cut until the run starts
     const link = linkUnder(map, e);
-    hover = link ? { canvas: map.canvas, link } : null;
-    map.canvas.style.cursor = link ? 'pointer' : 'default';
+    hover = link ? { canvas, link } : null;
+    canvas.style.cursor = link ? 'pointer' : 'default';
   });
-  map.canvas.addEventListener('mouseleave', () => { if (hover?.canvas === map.canvas) hover = null; });
-  map.canvas.addEventListener('click', e => {
+  canvas.addEventListener('mouseleave', () => { if (hover?.canvas === canvas) hover = null; });
+  canvas.addEventListener('click', e => {
     if (wasDrag(e)) return;
     if (planning()) {
-      const { x, y } = (map.renderer.toGround ?? map.renderer.toWorld)(e.clientX, e.clientY);
+      const { x, y } = (renderer.toGround ?? renderer.toWorld)(e.clientX, e.clientY);
       if (planner.click(x, y)) renderSetup();
       return;
     }
+    if (ui.setup) return;
     const link = linkUnder(map, e); if (link) cutOrRestore(link);
   });
-  map.canvas.addEventListener('contextmenu', e => e.preventDefault());   // right drag pans
-  new ResizeObserver(() => map.renderer.resize()).observe(map.canvas.parentElement);
+  canvas.addEventListener('contextmenu', e => e.preventDefault());   // right drag pans
 }
+for (const map of allMaps) new ResizeObserver(() => map.renderer.resize()).observe(map.canvas.parentElement);
 
 function drawMap(map, time) {
   map.renderer.draw(lastSnaps[map.panelIndex()], {
@@ -396,6 +443,7 @@ function frame(time) {
   requestAnimationFrame(frame);
 }
 
+setRender(ui.render);
 build();
 setView('grid');
 setInterval(simStep, 16);

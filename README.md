@@ -36,11 +36,11 @@ URL options:
 | Option    | Effect                                                     |
 |-----------|------------------------------------------------------------|
 | `?seed=42` | Fixes the traffic, city layout and emergency-vehicle route |
-| `?2d=1`    | Uses the flat 2D map instead of the 3D view                |
+| `?2d=1`    | Starts in the flat 2D map instead of the 3D view (switch any time with `D`) |
 
 ## Controls
 
-Choose the emergency vehicle's route on the setup card, then press **Enter** to start.
+Choose the emergency vehicle's route on the setup card, then press **Enter** to start. While the setup card is open, every other button and shortcut is locked, so the only choices are Random or Choose on map (plus Undo and Clear for a planned route). You can still drag the camera.
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
@@ -50,8 +50,9 @@ Choose the emergency vehicle's route on the setup card, then press **Enter** to 
 | `R` | Restore all links | `1` `2` `3` | Focus a city |
 | `G` | Follow the emergency vehicle | `[` `]` | Slow down / speed up |
 | `H` | Recentre the camera | `Shift`+`R` | Reset |
+| `D` | Switch between 3D and 2D view | | |
 
-Click any link on the map to cut it.
+Click any link on the map to cut it once the simulation is running. `G` and `H` move the 3D camera, so they are hidden in 2D view.
 
 ## Project layout
 

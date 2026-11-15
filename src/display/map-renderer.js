@@ -5,7 +5,7 @@ const C = {
   bg: '#0b1220', panel: '#111b2e', border: '#1f2d47', road: '#1c2a44', lane: '#2a3d61',
   text: '#e6f0ff', muted: '#8ea3c4', go: '#3dffa8', stop: '#ff5470', wait: '#ffb547',
   data: '#38bdf8', siren: '#ff3355', sirenBlue: '#4d7cff', car: '#9fb3d1', off: '#4a5a78',
-  msgCar: '#ffe14d', msgEmv: '#ff3df0',
+  msgCar: '#ffe14d', msgEmv: '#ff3df0', route: '#c77dff',
 };
 const ROAD_W = 16;        // m
 const PLATE = 22;         // m, junction plate
@@ -136,7 +136,26 @@ export function createMapRenderer(canvas) {
       ctx.globalAlpha = 1;
     }
 
-    // 4. Cars (ambulance last, on top).
+    // 4. Em-vehicle route (planned or dispatched) and planner targets.
+    if (route && route.pts.length > 1) {
+      const { pts, dim, finished } = route;
+      ctx.globalAlpha = dim ? 0.35 : 0.9; ctx.strokeStyle = C.route; ctx.lineWidth = px(5); ctx.lineJoin = 'round';
+      if (!dim) glow(C.route, 10);
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y); ctx.stroke();
+      noGlow(); ctx.globalAlpha = 1;
+      const mid = (p, q) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+      const dot = (p, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill(); };
+      dot(mid(pts[0], pts[1]), C.go);
+      if (finished) dot(mid(pts[pts.length - 1], pts[pts.length - 2]), C.stop);
+    }
+    if (targets && targets.length) {
+      ctx.globalAlpha = reducedMotion ? 0.8 : 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(time / 220));
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = px(2.5);
+      for (const t of targets) { ctx.beginPath(); ctx.arc(t.x, t.y, 14, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+
+    // 5. Cars (ambulance last, on top).
     let amb = null;
     for (const car of s.cars) {
       if (car.isAmbulance) { amb = car; continue; }
@@ -162,5 +181,11 @@ export function createMapRenderer(canvas) {
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
-  return { resize, draw, toWorld, get pxPerMetre() { return pxPerM; } };
+  let route = null, targets = null;
+  /** Em-vehicle route polyline in world metres (or null); dim = already dispatched. Same contract as the 3D view. */
+  function setRoute(pts, { dim = false, finished = true } = {}) { route = pts && pts.length > 1 ? { pts, dim, finished } : null; }
+  /** Clickable planner targets in world metres, or null. They pulse in draw(). */
+  function setTargets(pts) { targets = pts; }
+
+  return { resize, draw, toWorld, setRoute, setTargets, get pxPerMetre() { return pxPerM; } };
 }

@@ -206,6 +206,25 @@ button.primary { border-color: var(--go); color: var(--bg); background: var(--go
 button.primary kbd { color: var(--bg); border-color: rgba(11, 18, 32, 0.4); }
 button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ---------- "?" explainers ---------- */
+.map-panel { position: relative; }
+.map-box { position: relative; }
+button.help {
+  position: absolute; top: 8px; right: 8px; z-index: 3;
+  width: 24px; height: 24px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; font-size: 14px; font-weight: 700; line-height: 1;
+  color: var(--muted); background: rgba(17, 27, 46, 0.9); border: 1px solid var(--border);
+}
+button.help:hover, button.help[aria-expanded="true"] { color: var(--data); border-color: var(--data); }
+#help-pop {
+  position: fixed; z-index: 30; width: min(320px, calc(100vw - 32px));
+  background: var(--panel); border: 1px solid var(--data); border-radius: var(--radius);
+  padding: 10px 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+#help-pop[hidden] { display: none; }
+#help-pop b { display: block; margin-bottom: 4px; font-size: 15px; color: var(--data); }
+#help-pop p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text); }
+
 /* Laptop screens: keep the dock on one row so the maps get the height. */
 @media (max-width: 1500px), (max-height: 760px) {
   header { padding: 6px 14px; gap: 10px; }

@@ -17,6 +17,21 @@ const SUB_S = 0.1;                    // world.tick limit
 const CLICK_TOL_PX = 10;              // how close to a link a click must land
 const SPEEDS = [1, 3, 5];
 const TAB_LABELS = ['Central', 'Fixed', 'Greenwave'];
+// "?" explainers, one per board.
+const HELP = {
+  central: {
+    title: 'Central',
+    text: 'One central computer runs all 16 junctions. It sees every car and knows exactly where the em-vehicle is going, so it turns lights green just ahead of it. It is the best case, but fragile: it reaches the junctions over the network links, so any junction it cannot reach (or every junction, if central fails) drops to a plain timer, shown by an amber TIMER ring.',
+  },
+  fixed: {
+    title: 'Fixed (central failed)',
+    text: 'What a city falls back to when its central computer fails. Every junction runs the same timer: 30 s green one way, 30 s green the other, with a short all-red between. It ignores traffic and the em-vehicle, so the em-vehicle often waits at red lights.',
+  },
+  greenwave: {
+    title: 'Greenwave',
+    text: 'Our system. There is no central computer: each junction decides for itself, using its own sensors and short messages from the junctions next to it ("cars coming", "em-vehicle coming"). The em-vehicle warning hops from junction to junction ahead of it. If links are cut, each junction still hears the siren from 80 m away and turns green.',
+  },
+};
 // Em-vehicle (emergency vehicle) models, picked at random per dispatch. Visual only.
 const VEHICLES = [{ kind: 'ambulance', name: 'ambulance' }, { kind: 'fire', name: 'fire engine' }, { kind: 'police', name: 'police car' }];
 const PANEL_DEFS = [
@@ -155,7 +170,7 @@ const actions = {
   },
   toggleShowMessages() { ui.showMessages = !ui.showMessages; },
   toggleView() { setView(ui.view === 'grid' ? 'focus' : 'grid'); },
-  setFocus(i) { ui.focus = i; setView('focus'); },
+  setFocus(i) { ui.focus = i; hideHelp(); setView('focus'); },
   speedDown() { setSpeed(SPEEDS[Math.max(0, SPEEDS.indexOf(ui.speed) - 1)]); },
   speedUp() { setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(ui.speed) + 1)]); },
   reset() { build(); prevAmb = null; arrivals = []; toast('Simulation reset', 'data'); },
@@ -179,6 +194,37 @@ function cutOrRestore(link) {
   toast(`Link ${a}–${b} ${up ? 'cut' : 'restored'}`, up ? 'stop' : 'go');
 }
 
+// ---------------- "?" explainers ----------------
+const helpPop = $('help-pop');
+let helpOpen = null;                  // { btn, pinned } while a popover is showing
+const helpKey = btn => (btn.dataset.help === 'focus' ? PANEL_DEFS[ui.focus].key : btn.dataset.help);
+function showHelp(btn, pinned) {
+  const h = HELP[helpKey(btn)];
+  $('help-title').textContent = h.title; $('help-text').textContent = h.text;
+  helpPop.hidden = false;
+  const r = btn.getBoundingClientRect(), w = helpPop.offsetWidth;
+  helpPop.style.top = `${r.bottom + 8}px`;
+  helpPop.style.left = `${Math.max(16, Math.min(window.innerWidth - w - 16, r.right - w))}px`;
+  if (helpOpen && helpOpen.btn !== btn) helpOpen.btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-expanded', 'true');
+  helpOpen = { btn, pinned };
+}
+function hideHelp() {
+  if (!helpOpen) return;
+  helpOpen.btn.setAttribute('aria-expanded', 'false');
+  helpPop.hidden = true; helpOpen = null;
+}
+for (const btn of document.querySelectorAll('.help')) {
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (helpOpen?.btn === btn && helpOpen.pinned) hideHelp(); else showHelp(btn, true);
+  });
+  btn.addEventListener('mouseenter', () => { if (!helpOpen?.pinned) showHelp(btn, false); });
+  btn.addEventListener('mouseleave', () => { if (helpOpen && !helpOpen.pinned) hideHelp(); });
+}
+document.addEventListener('click', e => { if (helpOpen && !helpPop.contains(e.target)) hideHelp(); });
+window.addEventListener('resize', hideHelp);
+
 // Dock and header buttons.
 for (const b of document.querySelectorAll('[data-action]')) {
   b.addEventListener('click', () => { actions[b.dataset.action](); b.blur(); });
@@ -200,6 +246,7 @@ document.addEventListener('keydown', e => {
   if (k === 'r' && e.shiftKey) { actions.reset(); e.preventDefault(); return; }
   if (ui.setup && e.key === 'Enter') { actions.start(); e.preventDefault(); return; }
   if (ui.finished && e.key === 'Enter') { actions.runAgain(); e.preventDefault(); return; }
+  if (helpOpen && e.key === 'Escape') { hideHelp(); e.preventDefault(); return; }
   if (ui.finished && e.key === 'Escape') { actions.dismissFinish(); e.preventDefault(); return; }
   if (ui.setup && ui.routeMode === 'custom' && e.key === 'Backspace') { actions.routeUndo(); e.preventDefault(); return; }
   if (['1', '2', '3'].includes(e.key)) { actions.setFocus(Number(e.key) - 1); e.preventDefault(); return; }
